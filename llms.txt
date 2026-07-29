@@ -123,7 +123,7 @@ recovery:
   - talktomeclaude companion --headless
   - talktomeclaude tui
 repository_guide: https://github.com/Fredasterehub/talktomeclaude/blob/main/docs/WINDOWS_COMPANION.md
-remote_helper: "Remote companion mode requires TalkToMeClaude on the selected assistant host and its console script on PATH for `hook install` and `hook stream`; the older listen topology does not. Codex uses a project-scoped additive Stop hook, explicit `talktomeclaude codex` activation, and a separate reply spool. The remote still needs no audio stack."
+remote_helper: "Remote companion mode requires TalkToMeClaude on the selected assistant host and its console script on PATH for `hook install` and `hook stream`; the older listen topology does not. Codex uses a project-scoped additive Stop hook, explicit `talktomeclaude codex` activation, a separate remote reply spool, and a separate Windows durable inbox. The remote still needs no audio stack."
 ```
 
 ## VOICES

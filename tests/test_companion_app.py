@@ -11,6 +11,8 @@ from talktomeclaude.companion.app import (
     DesktopCompanionApplication,
     PersistentTranscriberFactory,
     _REMOTE_REPLY_COMMAND,
+    _reply_inbox_path,
+    _reply_spool_path,
     _remote_reply_command,
     _route_hotkey_press,
     _route_hotkey_release,
@@ -319,6 +321,24 @@ class HookBootstrapTests(unittest.TestCase):
         self.assertEqual(
             _remote_reply_command("codex"),
             ("talktomeclaude", "hook", "stream", "--provider", "codex"),
+        )
+
+    def test_codex_uses_isolated_local_durable_state(self) -> None:
+        from pathlib import Path
+
+        root = Path("state-root")
+        self.assertEqual(_reply_spool_path(root, "claude"), root / "reply-spool")
+        self.assertEqual(
+            _reply_inbox_path(root, "claude"),
+            root / "reply-inbox",
+        )
+        self.assertEqual(
+            _reply_spool_path(root, "codex"),
+            root / "reply-spool-codex",
+        )
+        self.assertEqual(
+            _reply_inbox_path(root, "codex"),
+            root / "reply-inbox-codex",
         )
 
 

@@ -90,6 +90,14 @@ def _reply_spool_path(root: Path, provider: str) -> Path:
     raise ValueError(f"unsupported assistant provider {provider!r}")
 
 
+def _reply_inbox_path(root: Path, provider: str) -> Path:
+    if provider == "claude":
+        return root / "reply-inbox"
+    if provider == "codex":
+        return root / "reply-inbox-codex"
+    raise ValueError(f"unsupported assistant provider {provider!r}")
+
+
 def _safe_stt_status(message: str) -> str:
     """Reduce third-party status prose to a content-free capability code."""
 
@@ -551,7 +559,7 @@ def build_headless_controller() -> CompanionController:
         initially_muted=not config.voice_assist_enabled(),
         on_answer_finished=lambda: holder["controller"].speech_finished(),
     )
-    receiver = ReplyReceiver(root / "reply-inbox")
+    receiver = ReplyReceiver(_reply_inbox_path(root, provider))
     inbox = ProductionReplyInbox(
         receiver,
         local_spool=None if remote else ReplySpool(_reply_spool_path(root, provider)),
@@ -622,7 +630,7 @@ def build_desktop_application() -> DesktopCompanionApplication:
         initially_muted=not config.voice_assist_enabled(),
         on_answer_finished=lambda: holder["controller"].speech_finished(),
     )
-    receiver = ReplyReceiver(root / "reply-inbox")
+    receiver = ReplyReceiver(_reply_inbox_path(root, provider))
     inbox = ProductionReplyInbox(
         receiver,
         local_spool=None if remote else ReplySpool(_reply_spool_path(root, provider)),

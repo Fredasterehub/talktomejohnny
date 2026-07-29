@@ -19,9 +19,10 @@ recognition, and Chatterbox cloned voices.
   host for its owned Stop hook and `talktomeclaude hook stream` helper. The Codex
   provider uses its own additive Stop hook at `remote-cwd/.codex/hooks.json`, must be
   trusted once with `/hooks` in Codex, and activates only when launched through the
-  `talktomeclaude codex` wrapper. Neither provider installs or runs the local
-  audio/Torch/TTS stack there. Legacy `listen` remote mode does not require this
-  helper.
+  `talktomeclaude codex` wrapper. Codex keeps both its remote spool and Windows
+  durable inbox separate from Claude state. Neither provider installs or runs the
+  local audio/Torch/TTS stack there. Legacy `listen` remote mode does not require
+  this helper.
 - Source installs are editable. A code-only update does not require rebuilding the
   virtual environment, but the running `talktomeclaude` process must be restarted.
 - Reinstall dependencies only when `pyproject.toml`, an optional engine, or a pinned

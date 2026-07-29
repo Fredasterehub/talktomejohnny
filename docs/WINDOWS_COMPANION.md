@@ -53,8 +53,9 @@ talktomeclaude codex
 
 The Codex Stop hook is additive and project-scoped under
 `remote-cwd/.codex/hooks.json`. Trust that hook once from Codex with `/hooks`
-before relying on streamed replies. To roll back, set the provider back to Claude
-and relaunch the normal path:
+before relying on streamed replies. Codex also uses separate remote spool and local
+inbox roots, so switching providers cannot replay a historical Claude queue. To roll
+back, set the provider back to Claude and relaunch the normal path:
 
 ```powershell
 talktomeclaude config set assistant-provider claude
