@@ -1,11 +1,11 @@
 {
-  "name": "talktomeclaude",
-  "version": "0.0.1",
-  "description": "A local-first voice medium for Claude Code: speaks Claude's replies with bundled local TTS voices and hears you with local Whisper-class speech-to-text.",
+  "name": "talktomejohnny",
+  "version": "0.1.1",
+  "description": "TalkToMeJohnny's backward-compatible Claude Code plugin surface. The local-first voice companion also supports Codex CLI through user lifecycle hooks.",
   "author": {
-    "name": "talktomeclaude contributors"
+    "name": "TalkToMeJohnny contributors"
   },
-  "homepage": "https://github.com/talktomeclaude/talktomeclaude",
+  "homepage": "https://github.com/Fredasterehub/talktomejohnny",
   "license": "MIT",
   "keywords": ["voice", "tts", "stt", "speech", "accessibility"]
 }

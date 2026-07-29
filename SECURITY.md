@@ -1,12 +1,11 @@
 # Security Policy
 
-TalkToMeJohnny uses private vulnerability reporting for undisclosed security
-issues. Do not open a public issue for an unpatched vulnerability.
+TalkToMeJohnny uses GitHub private vulnerability reporting for undisclosed
+security issues. Do not open a public issue for an unpatched vulnerability.
 
-## Reporting
+## Report A Vulnerability
 
-Use the repository's GitHub Security Advisory or other private maintainer
-channel. Include:
+Use the repository's GitHub private disclosure flow. Include:
 
 - affected version or commit
 - platform and environment details

@@ -91,7 +91,7 @@ class ConfigCliTests(_CliHarness):
 
     def test_namespace_policy_and_allowlist_round_trip(self) -> None:
         result = self.runner.invoke(cli.main, ["config", "get", "command-namespace-policy"])
-        self.assertEqual(result.output.strip(), "allow-all")
+        self.assertEqual(result.output.strip(), "ask-first-use")
         result = self.runner.invoke(
             cli.main, ["config", "set", "command-namespace-policy", "allowlist"]
         )

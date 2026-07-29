@@ -50,10 +50,7 @@ voices, caches, and settings are not stranded.
 - Python 3.11 or newer.
 - Claude Code on `PATH` for the Claude voice loop.
 - Codex CLI on `PATH` for the Codex voice loop.
-- Git for Windows if you want native Windows hook execution through Git Bash for
-  the automatic reply-speaking path.
-- No PyPI release is described here. Install from a Git checkout or editable
-  working tree.
+- Install from a Git checkout or editable working tree.
 
 ## Install
 
@@ -130,6 +127,15 @@ voices, caches, and settings are not stranded.
 
 TalkToMeJohnny does not replace the assistant CLI. It attaches to the exact
 session you choose.
+
+Start the companion first. It installs the owned user-level lifecycle hooks and
+the visible control skill for each configured provider. To install either side
+explicitly, run:
+
+```bash
+talktomejohnny hook install --provider claude
+talktomejohnny hook install --provider codex
+```
 
 ### Claude Code
 
@@ -227,10 +233,10 @@ remains a compatibility alias during migration.
   migration.
 - Existing `import talktomeclaude` remains the compatibility import path while the
   rename lands.
-- Existing `~/.config/talktomeclaude/` and `~/.cache/talktomeclaude/` data should
-  be copied forward non-destructively, not moved or deleted.
-- Existing voice references and model caches stay reusable. Do not strand them
-  during rename or upgrade work.
+- On first launch, existing settings, the voice registry, and voice references
+  are copied into `~/.config/talktomejohnny/` without overwriting either root.
+- Existing model caches under `~/.cache/talktomeclaude/` are reused in place, so
+  large downloads are not copied or repeated.
 
 ## For AI agents
 

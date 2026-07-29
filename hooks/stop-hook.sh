@@ -15,7 +15,8 @@ for candidate in \
   "$(command -v talktomeclaude 2>/dev/null)"
 do
   if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    exec "$candidate" hook stop "$@"
+    exec "$candidate" hook stop --transport --provider claude \
+      --owner-marker talktomeclaude.windows-companion.v1 "$@"
   fi
 done
 

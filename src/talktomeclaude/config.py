@@ -34,6 +34,7 @@ DEFAULT_ASSISTANT_PROVIDER = "both"
 CLAUDE_PERMISSIONS = ("off", "skip", "acceptEdits", "bypassPermissions")
 STT_DEVICES = ("auto", "cuda", "cpu")
 COMMAND_NAMESPACE_POLICIES = ("allow-all", "ask-first-use", "allowlist")
+DEFAULT_COMMAND_NAMESPACE_POLICY = "ask-first-use"
 CLONE_RECIPE_CHOICES = ("shown", "later")
 
 
@@ -250,11 +251,13 @@ def set_stt_device(value: str) -> None:
 
 
 def command_namespace_policy() -> str:
-    """The persisted command-namespace allowlist policy; allow-all is the
-    default. Enforcement lands with the live command catalog — the policy is
-    the contract persisted ahead of it."""
+    """The persisted command policy; fresh installs confirm first use."""
     value = load().get("command-namespace-policy")
-    return value if value in COMMAND_NAMESPACE_POLICIES else "allow-all"
+    return (
+        value
+        if value in COMMAND_NAMESPACE_POLICIES
+        else DEFAULT_COMMAND_NAMESPACE_POLICY
+    )
 
 
 def set_command_namespace_policy(value: str) -> None:

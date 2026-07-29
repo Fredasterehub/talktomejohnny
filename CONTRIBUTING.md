@@ -1,13 +1,14 @@
 # Contributing to TalkToMeJohnny
 
-TalkToMeJohnny is the public name for this repository. Use the legacy
-`talktomeclaude` names only as compatibility aliases during migration work.
+TalkToMeJohnny is the public name for this repository. Use `talktomeclaude`
+only as a compatibility alias during migration work.
 
 ## Before You Start
 
-1. Create a clean branch.
+1. Work in a clean branch or worktree.
 2. Keep secrets out of commits, logs, docs, and screenshots.
 3. Preserve existing voice, cache, and config data when touching migration code.
+4. Do not overwrite unrelated edits that are already present in the worktree.
 
 ## Local Setup
 
@@ -28,11 +29,11 @@ ruff check src tests
 python -m build
 ```
 
-If you touched public docs, also verify that operator-specific examples did not
-slip back in:
+If you touched public docs, also run a hygiene search for local-only paths,
+hostnames, and destructive examples:
 
 ```powershell
-rg -n "talktomeclaude|C:\\Users\\Fred|proxmox-dev|192\\.168\\.2\\.122" README.md llms.txt docs CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md CHANGELOG.md -S
+rg -n "talktomeclaude|C:\\Users\\<name>|user@host|/path/to/project|rm -rf|git reset --hard|git checkout --" README.md llms.txt docs CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md CHANGELOG.md -S
 ```
 
 ## Compatibility Rules

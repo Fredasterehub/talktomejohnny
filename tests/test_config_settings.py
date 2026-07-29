@@ -76,7 +76,7 @@ class ConfigSettingsTests(unittest.TestCase):
         self.assertEqual(config.stt_device(), "auto")
 
     def test_command_namespace_policy_defaults_guards_and_round_trips(self) -> None:
-        self.assertEqual(config.command_namespace_policy(), "allow-all")
+        self.assertEqual(config.command_namespace_policy(), "ask-first-use")
         config.set_command_namespace_policy("ask-first-use")
         self.assertEqual(config.command_namespace_policy(), "ask-first-use")
         config.set_command_namespace_policy("allowlist")
