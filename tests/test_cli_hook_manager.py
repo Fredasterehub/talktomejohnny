@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import unittest
@@ -9,6 +10,20 @@ from unittest import mock
 from click.testing import CliRunner
 
 from talktomeclaude.cli import main
+
+
+def _hook_scripts(document: dict[str, object]) -> tuple[str, ...]:
+    scripts: list[str] = []
+    for groups in document.get("hooks", {}).values():
+        for group in groups:
+            for hook in group["hooks"]:
+                command = hook["command"]
+                if " -EncodedCommand " in command:
+                    command = base64.b64decode(command.rsplit(" ", 1)[1]).decode(
+                        "utf-16-le"
+                    )
+                scripts.append(command)
+    return tuple(scripts)
 
 
 class HookManagerCliTests(unittest.TestCase):
@@ -47,11 +62,19 @@ class HookManagerCliTests(unittest.TestCase):
             self.assertEqual(result.exit_code, 0, result.output)
             self.assertIn("installed", result.output)
         wire = self.settings.read_text(encoding="utf-8")
-        self.assertEqual(wire.count("talktomeclaude.windows-companion.v1"), 1)
-        self.assertEqual(
-            wire.count("talktomejohnny.session-control.claude.v1"), 2
-        )
         document = json.loads(wire)
+        scripts = _hook_scripts(document)
+        self.assertEqual(
+            sum("talktomeclaude.windows-companion.v1" in item for item in scripts),
+            1,
+        )
+        self.assertEqual(
+            sum(
+                "talktomejohnny.session-control.claude.v1" in item
+                for item in scripts
+            ),
+            2,
+        )
         self.assertEqual(
             document["hooks"]["Stop"][0]["hooks"][0]["command"], "other"
         )
@@ -128,9 +151,12 @@ class HookManagerCliTests(unittest.TestCase):
         self.assertEqual(len(document["hooks"]["Stop"]), 1)
         self.assertEqual(len(document["hooks"]["UserPromptSubmit"]), 1)
         self.assertEqual(len(document["hooks"]["SessionEnd"]), 1)
-        wire = json.dumps(document, ensure_ascii=False)
         self.assertEqual(
-            wire.count("talktomejohnny.session-control.codex.v1"), 2
+            sum(
+                "talktomejohnny.session-control.codex.v1" in item
+                for item in _hook_scripts(document)
+            ),
+            2,
         )
         self.assertTrue(
             (self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md").exists()

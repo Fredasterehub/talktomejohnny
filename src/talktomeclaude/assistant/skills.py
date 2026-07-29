@@ -101,9 +101,26 @@ def _skill_paths(
     return tuple(dict.fromkeys((primary, active_path)))
 
 
+def _legacy_skill_paths(
+    provider: ProviderName,
+    *,
+    environment: dict[str, str] | None = None,
+) -> tuple[Path, ...]:
+    return tuple(
+        path.parent.parent / "talktomeclaude" / "SKILL.md"
+        for path in _skill_paths(provider, environment=environment)
+    )
+
+
 def _skill_content(provider: ProviderName) -> str:
     prefix = _COMMAND_PREFIX[provider]
     repair_command = f"talktomejohnny hook install --provider {provider}"
+    recovery = (
+        f"run `{repair_command}`, then open `/hooks` in Codex and trust the "
+        "TalkToMeJohnny hooks"
+        if provider == "codex"
+        else f"run `{repair_command}` and trust the installed hooks"
+    )
     return (
         "---\n"
         "name: talktomejohnny\n"
@@ -121,8 +138,7 @@ def _skill_content(provider: ProviderName) -> str:
         "Do not run tools.\n"
         "Do not modify files.\n"
         "Reply with exactly one short sentence:\n"
-        "TalkToMeJohnny local control is unavailable; run "
-        f"`{repair_command}` and trust the installed hooks.\n"
+        f"TalkToMeJohnny local control is unavailable; {recovery}.\n"
     )
 
 
@@ -211,6 +227,21 @@ class AssistantSkillInstaller:
             managed.append(_ManagedSkillPath(path, existing))
         return tuple(managed)
 
+    def _owned_legacy_paths(
+        self, provider: ProviderName
+    ) -> tuple[_ManagedSkillPath, ...]:
+        owned: list[_ManagedSkillPath] = []
+        for path in _legacy_skill_paths(provider, environment=self._environment()):
+            if not path.exists():
+                continue
+            try:
+                existing = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise SkillInstallError("legacy assistant skill is unreadable") from exc
+            if existing == _LEGACY_GENERATED_SKILL or _SKILL_MARKER in existing:
+                owned.append(_ManagedSkillPath(path, existing))
+        return tuple(owned)
+
     def inspect(self, provider: ProviderName) -> SkillInspection:
         inspections = self._inspections(provider)
         if any(item.status is SkillStatus.CONFLICT for item in inspections):
@@ -224,6 +255,7 @@ class AssistantSkillInstaller:
     def install(self, provider: ProviderName) -> Path:
         expected = _skill_content(provider)
         managed = self._managed_paths(provider)
+        legacy = self._owned_legacy_paths(provider)
         if any(
             item.existing is not None and not _is_owned(item.existing, expected)
             for item in managed
@@ -238,18 +270,31 @@ class AssistantSkillInstaller:
                     _atomic_write_text(rollback.path, rollback.existing)
 
         written: list[_ManagedSkillPath] = []
+        removed_legacy: list[_ManagedSkillPath] = []
         try:
             for item in managed:
                 if item.existing == expected:
                     continue
                 _atomic_write_text(item.path, expected)
                 written.append(item)
+            for item in legacy:
+                item.path.unlink()
+                removed_legacy.append(item)
         except OSError as exc:
+            for item in removed_legacy:
+                _atomic_write_text(item.path, item.existing or "")
             rollback_writes()
             raise SkillInstallError("assistant skill update failed") from exc
         except BaseException:
+            for item in removed_legacy:
+                _atomic_write_text(item.path, item.existing or "")
             rollback_writes()
             raise
+        for item in removed_legacy:
+            try:
+                item.path.parent.rmdir()
+            except OSError:
+                pass
         return managed[0].path
 
     def uninstall(self, provider: ProviderName) -> bool:

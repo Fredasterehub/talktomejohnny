@@ -9,7 +9,7 @@ aliases:
 description: Local-first voice medium for Claude Code and Codex CLI. Speech-to-text and speech output stay local. Exact-session attachment is handled by deterministic hooks.
 repo: https://github.com/Fredasterehub/talktomejohnny
 license: MIT
-version: 0.1.3
+version: 0.1.4
 entrypoint: talktomejohnny
 ```
 
@@ -85,6 +85,7 @@ claude_code:
     - /talktomejohnny status
 codex_cli:
   normal_launch: codex
+  trust_installed_hooks: /hooks
   exact_attach_commands:
     - $talktomejohnny on
     - $talktomejohnny off
@@ -151,10 +152,10 @@ notes:
 ## GOTCHAS
 ```yaml
 windows_hooks:
-  note: "User lifecycle hooks resolve and pin the installed TalkToMeJohnny executable instead of invoking a shell script from PATH."
-  recovery: "Re-run the provider-specific hook install command, then trust the owned hook in the assistant CLI when prompted."
+  note: "User lifecycle hooks resolve and pin the installed TalkToMeJohnny executable. Windows encodes only that absolute invocation and fixed hook arguments for noninteractive PowerShell so Bash-hosted Claude hooks preserve the path and JSON transport."
+  recovery: "Re-run the provider-specific hook install command. In Codex, open /hooks, review the TalkToMeJohnny entries, and trust their current definitions."
 security:
-  note: "Do not store secrets, tokens, or private paths in the repository or in public docs."
+  note: "Do not store secrets, tokens, private voice material, or operator configuration in the repository or public docs. Doctor warns when optional cloning packages or their build tooling are below fixed security floors."
 ```
 
 ## REFERENCES

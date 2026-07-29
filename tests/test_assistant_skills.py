@@ -53,6 +53,7 @@ class AssistantSkillInstallerTests(unittest.TestCase):
         self.assertIn(
             "talktomejohnny hook install --provider codex", codex_content
         )
+        self.assertIn("open `/hooks` in Codex", codex_content)
 
     def test_install_is_idempotent_and_recognizes_owned_marker(self) -> None:
         path = self.installer.install("claude")
@@ -93,6 +94,38 @@ class AssistantSkillInstallerTests(unittest.TestCase):
             self.assertIn(
                 "talktomejohnny hook install --provider codex", migrated
             )
+
+    def test_install_removes_only_owned_legacy_namespace_skill(self) -> None:
+        generated = (
+            "# TalkToMeJohnny local control\n\n"
+            "This command is intercepted locally by TalkToMeJohnny before the assistant sees it.\n\n"
+            "If you are reading this, the local TalkToMeJohnny session-control hook is missing,\n"
+            "untrusted, or offline.\n\n"
+            "Do not perform any tool actions.\n"
+            "Reply with exactly one short sentence:\n"
+            "TalkToMeJohnny local control is unavailable; run `talktomejohnny hook install` and trust the installed hooks.\n"
+        )
+        legacy = self.home / ".agents" / "skills" / "talktomeclaude" / "SKILL.md"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(generated, encoding="utf-8", newline="\n")
+
+        current = self.installer.install("codex")
+
+        self.assertTrue(current.exists())
+        self.assertFalse(legacy.exists())
+
+    def test_install_preserves_user_authored_legacy_namespace_skill(self) -> None:
+        legacy = self.home / ".claude" / "skills" / "talktomeclaude" / "SKILL.md"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("# My legacy workflow\n", encoding="utf-8")
+
+        current = self.installer.install("claude")
+
+        self.assertTrue(current.exists())
+        self.assertEqual(
+            legacy.read_text(encoding="utf-8"),
+            "# My legacy workflow\n",
+        )
 
     def test_conflicting_user_skill_fails_closed_without_overwrite(self) -> None:
         path = self.home / ".claude" / "skills" / "talktomejohnny" / "SKILL.md"

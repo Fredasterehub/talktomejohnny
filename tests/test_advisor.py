@@ -67,6 +67,11 @@ class RecommendTests(unittest.TestCase):
         recipe = "\n".join(rec.clone_recipe)
         self.assertIn("download.pytorch.org/whl/cu128", recipe)
         self.assertIn("--no-deps chatterbox-tts==0.1.7", recipe)
+        self.assertIn("transformers==5.5.0", recipe)
+        self.assertIn("diffusers==0.38.0", recipe)
+        self.assertIn("setuptools>=83", recipe)
+        self.assertNotIn("transformers==5.2.0", recipe)
+        self.assertNotIn("diffusers==0.29.0", recipe)
         self.assertTrue(rec.stt_tier.startswith("GPU"))
         self.assertTrue(any("cu128" in note for note in rec.notes))
 
@@ -79,6 +84,29 @@ class RecommendTests(unittest.TestCase):
         with mock.patch.object(advisor.shutil, "which", return_value=None):
             recipe = advisor.clone_install_recipe()
         self.assertTrue(all(cmd.startswith("python -m pip install") for cmd in recipe))
+
+    def test_clone_security_warnings_flag_only_versions_below_fixed_floors(
+        self,
+    ) -> None:
+        versions = {
+            "diffusers": "0.29.0",
+            "setuptools": "83.0.0",
+            "transformers": "5.5.0",
+        }
+        with mock.patch.object(
+            advisor, "package_version", side_effect=lambda name: versions[name]
+        ):
+            warnings = advisor.clone_security_warnings()
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("diffusers 0.29.0", warnings[0])
+        self.assertIn("0.38.0", warnings[0])
+
+    def test_clone_security_warnings_ignore_absent_optional_stack(self) -> None:
+        with mock.patch.object(
+            advisor, "package_version", side_effect=advisor.PackageNotFoundError
+        ):
+            self.assertEqual(advisor.clone_security_warnings(), ())
 
     def test_recommend_picks_the_most_capable_gpu(self) -> None:
         rec = advisor.recommend(

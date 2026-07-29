@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import os
@@ -61,6 +62,32 @@ class HookInspection:
 def _quoted_command(executable: str, *arguments: str) -> str:
     if not isinstance(executable, str) or not executable.strip():
         raise ValueError("hook executable must be a non-empty string")
+    windows_style = (
+        ":" in executable[:3]
+        or "\\" in executable
+        or executable.casefold().endswith(".exe")
+    )
+    if windows_style:
+        # Claude Code can host native Windows hooks through WSL/Git Bash, where
+        # an unquoted C:\ path loses its backslashes. An encoded PowerShell
+        # invocation is shell-neutral, preserves hook stdin/stdout, and keeps
+        # every executable/argument value in a PowerShell string literal.
+        literals = " ".join(
+            f"'{value.replace(chr(39), chr(39) * 2)}'"
+            for value in (executable, *arguments)
+        )
+        script = f"& {literals}"
+        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+        return (
+            "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
+            f"{encoded}"
+        )
+    return shlex.join([executable, *arguments])
+
+
+def _previous_quoted_command(executable: str, *arguments: str) -> str:
+    """Render the exact command format released before Windows shell bridging."""
+
     argv = [executable, *arguments]
     windows_style = (
         ":" in executable[:3]
@@ -90,7 +117,13 @@ def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
         return str(override_path)
     argv0 = Path(sys.argv[0]).expanduser()
     if argv0.is_absolute() and argv0.exists():
-        return str(argv0.resolve())
+        # Keep a stable user-facing launcher path (for example uv's
+        # ~/.local/bin symlink) instead of pinning its versioned target.
+        return os.path.abspath(argv0)
+    for candidate in ("talktomejohnny", "talktomeclaude"):
+        resolved = shutil.which(candidate, path=active.get("PATH"))
+        if resolved:
+            return os.path.abspath(resolved)
     executable_parent = Path(sys.executable).expanduser().resolve().parent
     for candidate in (
         "talktomejohnny.exe",
@@ -101,21 +134,22 @@ def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
         sibling = executable_parent / candidate
         if sibling.exists():
             return str(sibling)
-    for candidate in ("talktomejohnny", "talktomeclaude"):
-        resolved = shutil.which(candidate, path=active.get("PATH"))
-        if resolved:
-            return resolved
     raise HookSettingsError(
         "assistant hook executable could not be resolved safely"
     )
 
 
-def _stop_hook_entries(provider: str, executable: str) -> tuple[dict[str, str], ...]:
+def _stop_hook_entries(
+    provider: str,
+    executable: str,
+    *,
+    command_builder: Callable[..., str] = _quoted_command,
+) -> tuple[dict[str, str], ...]:
     if provider == "claude":
         return (
             {
                 "type": "command",
-                "command": _quoted_command(
+                "command": command_builder(
                     executable,
                     "hook",
                     "stop",
@@ -129,7 +163,7 @@ def _stop_hook_entries(provider: str, executable: str) -> tuple[dict[str, str], 
         return (
             {
                 "type": "command",
-                "command": _quoted_command(
+                "command": command_builder(
                     executable,
                     "hook",
                     "stop",
@@ -145,7 +179,10 @@ def _stop_hook_entries(provider: str, executable: str) -> tuple[dict[str, str], 
 
 
 def _session_control_entries(
-    provider: str, executable: str
+    provider: str,
+    executable: str,
+    *,
+    command_builder: Callable[..., str] = _quoted_command,
 ) -> dict[str, tuple[dict[str, str], ...]]:
     if provider == "claude":
         marker = CLAUDE_SESSION_CONTROL_MARKER
@@ -157,7 +194,7 @@ def _session_control_entries(
         raise ValueError(f"unsupported assistant provider {provider!r}")
     entry = {
         "type": "command",
-        "command": _quoted_command(
+        "command": command_builder(
             executable,
             "hook",
             "session",
@@ -212,6 +249,47 @@ def _legacy_session_control_entries(
         ),
     }
     return {event_name: (entry,), "SessionEnd": (dict(entry),)}
+
+
+def _combined_entry_maps(
+    *sources: dict[str, tuple[dict[str, str], ...]],
+) -> dict[str, tuple[dict[str, str], ...]]:
+    combined: dict[str, list[dict[str, str]]] = {}
+    for source in sources:
+        for event_name, entries in source.items():
+            combined.setdefault(event_name, []).extend(dict(entry) for entry in entries)
+    return {event_name: tuple(entries) for event_name, entries in combined.items()}
+
+
+def _previous_entry_maps(
+    provider: str,
+    executable: str,
+) -> dict[str, tuple[dict[str, str], ...]]:
+    candidates = [executable]
+    executable_path = Path(executable).expanduser()
+    if executable_path.is_absolute() and executable_path.exists():
+        resolved = str(executable_path.resolve())
+        if resolved not in candidates:
+            candidates.append(resolved)
+    sources: list[dict[str, tuple[dict[str, str], ...]]] = []
+    for candidate in candidates:
+        sources.extend(
+            (
+                {
+                    "Stop": _stop_hook_entries(
+                        provider,
+                        candidate,
+                        command_builder=_previous_quoted_command,
+                    )
+                },
+                _session_control_entries(
+                    provider,
+                    candidate,
+                    command_builder=_previous_quoted_command,
+                ),
+            )
+        )
+    return _combined_entry_maps(*sources)
 
 
 def _owned_entry(entry: dict[str, Any], owned: dict[str, str]) -> bool:
@@ -621,10 +699,11 @@ class ClaudeHookManager(_JsonHookManager):
                 "Stop": _stop_hook_entries("claude", executable),
                 **_session_control_entries("claude", executable),
             },
-            legacy_entries={
-                **_legacy_stop_entries("claude"),
-                **_legacy_session_control_entries("claude"),
-            },
+            legacy_entries=_combined_entry_maps(
+                _legacy_stop_entries("claude"),
+                _legacy_session_control_entries("claude"),
+                _previous_entry_maps("claude", executable),
+            ),
             markers=(OWNED_HOOK_MARKER, CLAUDE_SESSION_CONTROL_MARKER),
             purpose="claude-hook-settings",
             max_conflict_attempts=max_conflict_attempts,
@@ -649,10 +728,11 @@ class CodexHookManager(_JsonHookManager):
                 "Stop": _stop_hook_entries("codex", executable),
                 **_session_control_entries("codex", executable),
             },
-            legacy_entries={
-                **_legacy_stop_entries("codex"),
-                **_legacy_session_control_entries("codex"),
-            },
+            legacy_entries=_combined_entry_maps(
+                _legacy_stop_entries("codex"),
+                _legacy_session_control_entries("codex"),
+                _previous_entry_maps("codex", executable),
+            ),
             markers=(CODEX_OWNED_HOOK_MARKER, CODEX_SESSION_CONTROL_MARKER),
             purpose="codex-hook-settings",
             max_conflict_attempts=max_conflict_attempts,

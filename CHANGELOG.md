@@ -4,6 +4,22 @@ All notable changes to TalkToMeJohnny will be recorded here.
 
 ## Unreleased
 
+## 0.1.4 - 2026-07-29
+
+- Preferred stable `PATH` launchers before interpreter-sibling fallbacks so
+  `uv tool` installs on Linux keep using the public `talktomejohnny` shim while
+  Windows absolute-path installs still recover when `Scripts` is not on `PATH`.
+- Preserved absolute launcher symlinks instead of pinning their versioned targets,
+  and documented Codex's separate `/hooks` trust step at install and fallback.
+- Made absolute Windows hook commands safe across native PowerShell and the
+  Bash host used by Claude Code while preserving hook JSON on stdin/stdout.
+- Replaced the optional cloning recipe's vulnerable Diffusers/Transformers pins
+  with GPU-smoked fixed releases and raised the build backend security floor.
+- Added `doctor` warnings for already-installed optional cloning packages below
+  the fixed security floors without moving voices or deleting model caches.
+- Kept the real Perth audio watermark working after removal of legacy
+  `pkg_resources`, using only its bundled model path and standard-library imports.
+
 ## 0.1.3 - 2026-07-29
 
 - Fixed Windows `hook install` for absolute executable invocations that do not

@@ -55,6 +55,10 @@ Attach, detach, or query the exact session from inside Claude Code:
 
 ### Codex CLI
 
+After `talktomejohnny hook install --provider codex`, open `/hooks` inside Codex,
+review the TalkToMeJohnny hook entries, and trust their current definitions.
+Codex deliberately keeps installation and trust as separate security steps.
+
 Start Codex normally:
 
 ```bash
@@ -72,6 +76,12 @@ $talktomejohnny status
 Only the attached session is eligible for spoken replies. Detached sessions do
 not replay old queue contents. If the companion is offline or its live lease is
 stale, the system fails closed.
+
+On Windows, generated hook JSON uses `powershell.exe -NoProfile -NonInteractive
+-EncodedCommand` around a fixed invocation of the resolved TalkToMeJohnny
+executable. Claude Code may execute native Windows hooks through Bash; this form
+preserves backslashes plus stdin/stdout JSON across both shells. The encoded
+payload contains only the absolute executable path and fixed hook arguments.
 
 ## Windows companion
 

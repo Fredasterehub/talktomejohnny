@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import threading
 import time
 import unittest
@@ -29,6 +31,21 @@ from talktomeclaude.companion.contracts import (
     IntentKind,
 )
 from talktomeclaude.core import RuntimePhase, RuntimeState
+
+
+def _hook_scripts(wire: str) -> tuple[str, ...]:
+    scripts: list[str] = []
+    document = json.loads(wire)
+    for groups in document.get("hooks", {}).values():
+        for group in groups:
+            for hook in group["hooks"]:
+                command = hook["command"]
+                if " -EncodedCommand " in command:
+                    command = base64.b64decode(command.rsplit(" ", 1)[1]).decode(
+                        "utf-16-le"
+                    )
+                scripts.append(command)
+    return tuple(scripts)
 
 
 class PersistentTranscriberFactoryTests(unittest.TestCase):
@@ -270,7 +287,13 @@ class HookBootstrapTests(unittest.TestCase):
                         / "SKILL.md"
                     ).exists()
                 )
-        self.assertEqual(wire.count("talktomeclaude.windows-companion.v1"), 1)
+        self.assertEqual(
+            sum(
+                "talktomeclaude.windows-companion.v1" in item
+                for item in _hook_scripts(wire)
+            ),
+            1,
+        )
 
     def test_remote_hook_uses_bounded_noninteractive_ssh(self) -> None:
         completed = mock.Mock(returncode=0)
@@ -320,7 +343,11 @@ class HookBootstrapTests(unittest.TestCase):
                     ).exists()
                 )
         self.assertEqual(
-            wire.count("talktomeclaude.windows-companion.codex.v1"), 1
+            sum(
+                "talktomeclaude.windows-companion.codex.v1" in item
+                for item in _hook_scripts(wire)
+            ),
+            1,
         )
 
     def test_remote_codex_hook_uses_user_level_scope(self) -> None:

@@ -12,9 +12,11 @@ installed (that is the whole point of an advisor), so it shells out to
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version as package_version
 
 from talktomeclaude import stt
 
@@ -26,6 +28,11 @@ _CLONE_MIN_VRAM_MB = 6000
 # validated recipe below installs those and defeats the pin with --no-deps.
 _CLONE_MIN_COMPUTE = (7, 0)
 _CU128_INDEX = "https://download.pytorch.org/whl/cu128"
+_CLONE_SECURITY_FLOORS = {
+    "diffusers": (0, 38, 0),
+    "setuptools": (83, 0, 0),
+    "transformers": (5, 5, 0),
+}
 
 
 def _installer_prefix() -> str:
@@ -38,12 +45,14 @@ def _installer_prefix() -> str:
 
 def clone_install_recipe() -> tuple[str, ...]:
     """The exact commands proven to run ChatterboxTTS.from_pretrained()+
-    generate() on this box (RTX 5060 Ti, sm_120), into the active environment.
+    generate() on CUDA 12.8 GPUs, into the active environment.
 
     Ordered: CUDA torch first, the engine ``--no-deps`` to skip its
     ``torch==2.6.0`` / ``torchaudio==2.6.0`` pins (no Blackwell kernels), then
-    the engine's real runtime deps. numpy resolves transitively to a working
-    2.x — cloning is validated on it here despite the engine's advisory <2 pin.
+    the engine's real runtime deps. The Transformers and Diffusers pins override
+    Chatterbox 0.1.7's vulnerable upstream pins with the minimum fixed releases.
+    numpy resolves transitively to a working 2.x — cloning is validated on it
+    here despite the engine's advisory <2 pin.
     """
     pip = _installer_prefix()
     return (
@@ -51,11 +60,33 @@ def clone_install_recipe() -> tuple[str, ...]:
         f"{pip} --no-deps chatterbox-tts==0.1.7",
         (
             f"{pip} "
-            '"librosa==0.11.0" s3tokenizer "transformers==5.2.0" "diffusers==0.29.0" '
+            '"setuptools>=83" "librosa==0.11.0" s3tokenizer '
+            '"transformers==5.5.0" "diffusers==0.38.0" '
             '"resemble-perth>=1.0.0" "conformer==0.3.2" "safetensors==0.5.3" '
             'spacy-pkuseg "pykakasi==2.3.0" pyloudnorm omegaconf'
         ),
     )
+
+
+def clone_security_warnings() -> tuple[str, ...]:
+    """Report installed optional cloning packages below fixed releases."""
+
+    warnings: list[str] = []
+    for package, floor in _CLONE_SECURITY_FLOORS.items():
+        try:
+            installed = package_version(package)
+        except PackageNotFoundError:
+            continue
+        matched = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?", installed)
+        parsed = tuple(int(part) for part in matched.groups()) if matched else None
+        if parsed is not None and parsed >= floor:
+            continue
+        minimum = ".".join(str(part) for part in floor)
+        warnings.append(
+            f"{package} {installed} is below the safe cloning floor {minimum}; "
+            "rerun the current cloning recipe before loading model content"
+        )
+    return tuple(warnings)
 
 
 @dataclass(frozen=True)
@@ -261,6 +292,10 @@ def format_report(machine: Machine | None = None) -> str:
     lines.append(f"  voice cloning    {verdict} — {rec.clone_reason}")
     for note in rec.notes:
         lines.append(f"    note: {note}")
+    security_warnings = clone_security_warnings()
+    if security_warnings:
+        lines += ["", "Optional cloning dependency security:"]
+        lines.extend(f"  ! {warning}" for warning in security_warnings)
     if rec.clone_recipe:
         lines += ["", "Install the cloning engine (into this environment):"]
         for command in rec.clone_recipe:

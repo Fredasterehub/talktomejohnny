@@ -137,6 +137,16 @@ talktomejohnny hook install --provider claude
 talktomejohnny hook install --provider codex
 ```
 
+Codex treats hook installation and hook trust as separate steps. After installing
+the Codex hooks, open `/hooks` inside Codex, review the TalkToMeJohnny entries,
+and trust their current definitions. Re-run this review if an upgrade changes
+the installed hook command.
+
+On Windows, the owned hook command uses noninteractive PowerShell with an encoded
+fixed invocation of the resolved TalkToMeJohnny executable. This keeps the same
+absolute command working when Claude Code hosts hooks through Bash; it does not
+embed tokens, settings, transcripts, or voice data.
+
 ### Claude Code
 
 Start Claude Code normally:

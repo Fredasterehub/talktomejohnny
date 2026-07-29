@@ -7,6 +7,8 @@ and the dispatch — the actual generate() runs behind a mocked model.
 from __future__ import annotations
 
 import tempfile
+import sys
+import types
 import unittest
 import wave
 from pathlib import Path
@@ -54,6 +56,31 @@ class CloneModelFreeTests(unittest.TestCase):
             with self.assertRaises(clone.CloneError) as ctx:
                 clone._load_model()
         self.assertIn("doctor", str(ctx.exception))
+
+    def test_repairs_perth_watermarker_without_legacy_pkg_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            perth = types.SimpleNamespace(
+                __file__=str(Path(directory) / "perth" / "__init__.py"),
+                PerthImplicitWatermarker=None,
+            )
+            implementation = types.SimpleNamespace(
+                PerthImplicitWatermarker=mock.sentinel.watermarker
+            )
+            with mock.patch.object(
+                clone.importlib, "import_module", return_value=implementation
+            ):
+                clone._repair_perth_watermarker(perth)
+
+            self.addCleanup(sys.modules.pop, "perth.perth_net", None)
+            compat = sys.modules["perth.perth_net"]
+            self.assertEqual(
+                compat.PREPACKAGED_MODELS_DIR,
+                str(Path(directory) / "perth" / "perth_net" / "pretrained"),
+            )
+            self.assertIs(
+                perth.PerthImplicitWatermarker,
+                mock.sentinel.watermarker,
+            )
 
     def test_to_mono_float_normalizes_shapes(self) -> None:
         self.assertEqual(clone._to_mono_float(np.zeros((1, 10), "float32")).shape, (10,))

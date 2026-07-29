@@ -830,6 +830,11 @@ def hook_install(settings_path: Path | None, provider: str) -> None:
     except (HookSettingsError, SkillInstallError) as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"companion lifecycle hooks {inspection.status.value}")
+    if provider == "codex":
+        click.echo(
+            "Codex hook trust is separate: open /hooks in Codex, review the "
+            "TalkToMeJohnny entries, and trust the current definitions."
+        )
 
 
 @hook.command("status")

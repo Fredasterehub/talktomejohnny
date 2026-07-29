@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 import json
 import os
@@ -215,11 +216,14 @@ class CodexCliIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("open /hooks in Codex", result.output)
         document = json.loads(hooks.read_text(encoding="utf-8"))
         self.assertEqual(document["hooks"]["Stop"][0]["hooks"][0]["command"], "other")
         command = document["hooks"]["Stop"][1]["hooks"][0]["command"]
-        self.assertIn("hook stop --transport --provider codex", command)
-        self.assertIn(CODEX_OWNED_HOOK_MARKER, command)
+        self.assertTrue(command.startswith("powershell.exe -NoProfile"))
+        decoded = base64.b64decode(command.rsplit(" ", 1)[1]).decode("utf-16-le")
+        self.assertIn("'hook' 'stop' '--transport' '--provider' 'codex'", decoded)
+        self.assertIn(CODEX_OWNED_HOOK_MARKER, decoded)
         self.assertEqual(len(document["hooks"]["UserPromptSubmit"]), 1)
         self.assertEqual(len(document["hooks"]["SessionEnd"]), 1)
         self.assertTrue(

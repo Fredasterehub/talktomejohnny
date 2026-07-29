@@ -28,5 +28,15 @@ Use the repository's GitHub private disclosure flow. Include:
   not public fixtures.
 - Hook and companion changes should fail closed when lifecycle ownership or
   attachment state is unclear.
+- Codex hook installation does not grant trust. Review current TalkToMeJohnny
+  definitions through Codex `/hooks` before enabling them.
+- On Windows, the generated encoded PowerShell hook payload contains only the
+  resolved executable path and fixed hook arguments; it must never include
+  tokens, transcripts, settings, or voice material.
+- Run `talktomejohnny doctor` after upgrades. It reports optional Diffusers,
+  Transformers, and setuptools installs below the fixed cloning security floors.
 
 Maintainers should acknowledge a report within 7 days.
+
+The public release audit for this version is recorded in
+[`docs/SECURITY_AUDIT_0.1.4.md`](docs/SECURITY_AUDIT_0.1.4.md).

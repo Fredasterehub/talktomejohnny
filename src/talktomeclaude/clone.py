@@ -15,7 +15,11 @@ Audio is written with the stdlib :mod:`wave` module rather than
 ``torchcodec`` package, which is not part of the pinned set.
 """
 
+import importlib
+import importlib.machinery
 import os
+import sys
+import types
 import wave
 from pathlib import Path
 
@@ -66,11 +70,46 @@ def _ensure_hf_home() -> None:
     os.environ.setdefault("HF_HOME", str(clone_cache_dir()))
 
 
+def _repair_perth_watermarker(perth_module) -> None:
+    """Bridge Perth 1.0.1 after setuptools removed ``pkg_resources``."""
+
+    if callable(getattr(perth_module, "PerthImplicitWatermarker", None)):
+        return
+    package_name = "perth.perth_net"
+    package_root = Path(perth_module.__file__).resolve().parent / "perth_net"
+    compat = types.ModuleType(package_name)
+    compat.__file__ = str(package_root / "__init__.py")
+    compat.__package__ = package_name
+    compat.__path__ = [str(package_root)]
+    compat.__spec__ = importlib.machinery.ModuleSpec(
+        package_name,
+        loader=None,
+        is_package=True,
+    )
+    compat.PREPACKAGED_MODELS_DIR = str(package_root / "pretrained")
+    previous = sys.modules.get(package_name)
+    sys.modules[package_name] = compat
+    try:
+        implementation = importlib.import_module(
+            "perth.perth_net.perth_net_implicit.perth_watermarker"
+        )
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(package_name, None)
+        else:
+            sys.modules[package_name] = previous
+        raise
+    perth_module.PerthImplicitWatermarker = implementation.PerthImplicitWatermarker
+
+
 def clone_available() -> bool:
     """True if the optional cloning stack (torch + chatterbox) is importable."""
     _ensure_hf_home()
     try:
+        import perth
         import torch  # noqa: F401
+
+        _repair_perth_watermarker(perth)
         from chatterbox.tts import ChatterboxTTS  # noqa: F401
     except Exception:
         return False

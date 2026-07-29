@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -34,6 +36,18 @@ from talktomeclaude.assistant.suppression import (
     SuppressionError,
 )
 from talktomeclaude.storage import AtomicJsonTransaction
+
+
+_WINDOWS_HOOK_PREFIX = (
+    "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
+)
+
+
+def _decode_windows_hook(command: str) -> str:
+    if not command.startswith(_WINDOWS_HOOK_PREFIX):
+        raise AssertionError(f"unexpected Windows hook command: {command!r}")
+    encoded = command.removeprefix(_WINDOWS_HOOK_PREFIX)
+    return base64.b64decode(encoded).decode("utf-16-le")
 
 
 def payload(**changes: object) -> str:
@@ -279,20 +293,14 @@ class ClaudeHookManagerTests(unittest.TestCase):
 
         self.assertEqual(installed.status, HookStatus.INSTALLED)
         document = json.loads(self.path.read_text(encoding="utf-8"))
-        expected = subprocess.list2cmdline(
-            [
-                executable,
-                "hook",
-                "session",
-                "--provider",
-                "claude",
-                "--owner-marker",
-                hook_module.CLAUDE_SESSION_CONTROL_MARKER,
-            ]
-        )
+        command = document["hooks"]["UserPromptExpansion"][0]["hooks"][0][
+            "command"
+        ]
         self.assertEqual(
-            document["hooks"]["UserPromptExpansion"][0]["hooks"][0]["command"],
-            expected,
+            _decode_windows_hook(command),
+            "& 'C:\\Program Files\\Talk To Me\\talktomejohnny.exe' 'hook' "
+            "'session' '--provider' 'claude' '--owner-marker' "
+            f"'{hook_module.CLAUDE_SESSION_CONTROL_MARKER}'",
         )
         self.assertNotIn("talktomeclaude hook session", json.dumps(document))
 
@@ -337,6 +345,26 @@ class ClaudeHookManagerTests(unittest.TestCase):
                         hook_module.resolve_hook_executable({"PATH": ""}),
                         str(executable),
                     )
+        with tempfile.TemporaryDirectory() as temporary:
+            scripts = Path(temporary)
+            sibling = scripts / "talktomejohnny.exe"
+            interpreter = scripts / "python.exe"
+            sibling.write_text("", encoding="utf-8")
+            interpreter.write_text("", encoding="utf-8")
+            preferred = scripts / "preferred" / "talktomejohnny.exe"
+            preferred.parent.mkdir()
+            preferred.write_text("", encoding="utf-8")
+            with mock.patch.object(hook_module.sys, "argv", ["talktomejohnny"]):
+                with mock.patch.object(
+                    hook_module.sys, "executable", str(interpreter)
+                ):
+                    with mock.patch.object(
+                        hook_module.shutil, "which", return_value=str(preferred)
+                    ):
+                        self.assertEqual(
+                            hook_module.resolve_hook_executable({"PATH": "shim"}),
+                            str(preferred),
+                        )
 
         windows_path = r"C:\Program Files\Talk To Me\talktomejohnny.exe"
         manager = SessionControlHookManager(
@@ -348,18 +376,12 @@ class ClaudeHookManagerTests(unittest.TestCase):
         self.assertEqual(installed.status, HookStatus.INSTALLED)
         document = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(
-            document["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
-            subprocess.list2cmdline(
-                [
-                    windows_path,
-                    "hook",
-                    "session",
-                    "--provider",
-                    "codex",
-                    "--owner-marker",
-                    hook_module.CODEX_SESSION_CONTROL_MARKER,
-                ]
+            _decode_windows_hook(
+                document["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
             ),
+            "& 'C:\\Program Files\\Talk To Me\\talktomejohnny.exe' 'hook' "
+            "'session' '--provider' 'codex' '--owner-marker' "
+            f"'{hook_module.CODEX_SESSION_CONTROL_MARKER}'",
         )
         with mock.patch.object(hook_module.os, "name", "posix"):
             self.assertEqual(
@@ -369,6 +391,147 @@ class ClaudeHookManagerTests(unittest.TestCase):
                     "session",
                 ),
                 "'/opt/Talk To Me/talktomejohnny' hook session",
+            )
+
+    def test_install_migrates_previous_absolute_windows_command_format(self) -> None:
+        executable = r"C:\Program Files\Talk To Me\talktomejohnny.exe"
+        session = subprocess.list2cmdline(
+            [
+                executable,
+                "hook",
+                "session",
+                "--provider",
+                "claude",
+                "--owner-marker",
+                hook_module.CLAUDE_SESSION_CONTROL_MARKER,
+            ]
+        )
+        stop = subprocess.list2cmdline(
+            [
+                executable,
+                "hook",
+                "stop",
+                "--transport",
+                "--owner-marker",
+                OWNED_HOOK_MARKER,
+            ]
+        )
+        self.path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptExpansion": [
+                            {"hooks": [{"type": "command", "command": session}]}
+                        ],
+                        "SessionEnd": [
+                            {"hooks": [{"type": "command", "command": session}]}
+                        ],
+                        "Stop": [
+                            {"hooks": [{"type": "command", "command": stop}]}
+                        ],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        installed = ClaudeHookManager(self.path, executable=executable).install()
+
+        self.assertEqual(installed.status, HookStatus.INSTALLED)
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        for event_name in ("UserPromptExpansion", "SessionEnd", "Stop"):
+            command = document["hooks"][event_name][0]["hooks"][0]["command"]
+            self.assertTrue(command.startswith(_WINDOWS_HOOK_PREFIX))
+            self.assertNotEqual(command, session)
+            self.assertNotEqual(command, stop)
+
+    def test_resolve_hook_executable_preserves_stable_absolute_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "versions" / "talktomejohnny"
+            target.parent.mkdir()
+            target.write_text("", encoding="utf-8")
+            launcher = root / "bin" / "talktomejohnny"
+            launcher.parent.mkdir()
+            try:
+                launcher.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+
+            with mock.patch.object(hook_module.sys, "argv", [str(launcher)]):
+                self.assertEqual(
+                    hook_module.resolve_hook_executable({"PATH": ""}),
+                    os.path.abspath(launcher),
+                )
+
+    def test_install_migrates_previous_resolved_symlink_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "tool" / "talktomejohnny"
+            target.parent.mkdir()
+            target.write_text("", encoding="utf-8")
+            launcher = root / "bin" / "talktomejohnny"
+            launcher.parent.mkdir()
+            try:
+                launcher.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+            session = hook_module._previous_quoted_command(
+                str(target),
+                "hook",
+                "session",
+                "--provider",
+                "claude",
+                "--owner-marker",
+                hook_module.CLAUDE_SESSION_CONTROL_MARKER,
+            )
+            stop = hook_module._previous_quoted_command(
+                str(target),
+                "hook",
+                "stop",
+                "--transport",
+                "--owner-marker",
+                OWNED_HOOK_MARKER,
+            )
+            self.path.write_text(
+                json.dumps(
+                    {
+                        "hooks": {
+                            "UserPromptExpansion": [
+                                {"hooks": [{"type": "command", "command": session}]}
+                            ],
+                            "SessionEnd": [
+                                {"hooks": [{"type": "command", "command": session}]}
+                            ],
+                            "Stop": [
+                                {"hooks": [{"type": "command", "command": stop}]}
+                            ],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            installed = ClaudeHookManager(
+                self.path,
+                executable=str(launcher),
+            ).install()
+
+            self.assertEqual(installed.status, HookStatus.INSTALLED)
+            document = json.loads(self.path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                document["hooks"]["UserPromptExpansion"][0]["hooks"][0][
+                    "command"
+                ],
+                hook_module._quoted_command(
+                    str(launcher),
+                    "hook",
+                    "session",
+                    "--provider",
+                    "claude",
+                    "--owner-marker",
+                    hook_module.CLAUDE_SESSION_CONTROL_MARKER,
+                ),
             )
 
     def test_external_conflict_retries_are_bounded_without_losing_latest_file(
