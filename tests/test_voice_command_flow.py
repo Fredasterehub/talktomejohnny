@@ -27,6 +27,9 @@ class _Isolated(unittest.TestCase):
         )
         env.start()
         self.addCleanup(env.stop)
+        # Most dispatcher tests isolate command parsing from policy gating.
+        # NamespacePolicyTests override this explicitly for the safer default.
+        config.set_command_namespace_policy("allow-all")
 
 
 class VoiceCommandDispatchTests(_Isolated):

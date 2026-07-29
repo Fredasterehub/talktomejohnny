@@ -64,7 +64,7 @@ public sealed class WindowsCompanionSpike
     private static readonly Dictionary<string, string> Cues = new Dictionary<string, string>(StringComparer.Ordinal) {
         { "idle", "[.]" }, { "recording", "[~]" }, { "transcribing", "[>]" },
         { "awaiting confirmation", "[?]" }, { "delivering", "[>>]" },
-        { "waiting for Claude", "[...]" }, { "planning", "[::]" },
+        { "waiting for assistant", "[...]" }, { "planning", "[::]" },
         { "speaking", "[))]" }, { "paused", "[||]" }, { "stopping", "[x]" },
         { "disconnected", "[//]" }, { "recoverable error", "[!]" }
     };
@@ -96,7 +96,7 @@ public sealed class WindowsCompanionSpike
     private Window BuildWindow()
     {
         Window result = new Window {
-            Title = "TalkToMeClaude Native Spike - [.] Idle",
+            Title = "TalkToMeJohnny Native Spike - [.] Idle",
             Width = 500,
             Height = 152,
             Left = 408,
@@ -109,7 +109,7 @@ public sealed class WindowsCompanionSpike
             Focusable = false,
             Background = new SolidColorBrush(Color.FromRgb(21, 25, 34))
         };
-        AutomationProperties.SetName(result, "TalkToMeClaude idle");
+        AutomationProperties.SetName(result, "TalkToMeJohnny idle");
         StackPanel panel = new StackPanel { Margin = new Thickness(14, 10, 14, 8) };
         stateText = new TextBlock {
             Text = "[.] Idle",
@@ -118,7 +118,7 @@ public sealed class WindowsCompanionSpike
             FontWeight = FontWeights.SemiBold,
             Foreground = Brushes.White
         };
-        AutomationProperties.SetName(stateText, "TalkToMeClaude state idle");
+        AutomationProperties.SetName(stateText, "TalkToMeJohnny state idle");
         detailText = new TextBlock {
             Text = "Ready; named-pipe core connected on demand",
             FontFamily = new FontFamily("Segoe UI"),
@@ -128,7 +128,7 @@ public sealed class WindowsCompanionSpike
             TextWrapping = TextWrapping.Wrap,
             MaxWidth = 460
         };
-        AutomationProperties.SetName(detailText, "TalkToMeClaude state detail");
+        AutomationProperties.SetName(detailText, "TalkToMeJohnny state detail");
         panel.Children.Add(stateText);
         panel.Children.Add(detailText);
         result.Content = panel;
@@ -219,7 +219,7 @@ public sealed class WindowsCompanionSpike
                 { "version", ProtocolVersion }, { "kind", "state_ack" }, { "seq", message["seq"] },
                 { "state", state }, { "sent_ns", message["sent_ns"] },
                 { "applied_ns", MonotonicNanoseconds() }, { "display_text", display },
-                { "cue", cue }, { "accessibility_name", "TalkToMeClaude " + state }
+                { "cue", cue }, { "accessibility_name", "TalkToMeJohnny " + state }
             });
         } else if (kind == "cycle") {
             window.Dispatcher.Invoke(new Action(delegate {
@@ -257,18 +257,18 @@ public sealed class WindowsCompanionSpike
     {
         stateText.Text = display;
         detailText.Text = "State supplied by versioned named-pipe core probe";
-        window.Title = "TalkToMeClaude Native Spike - " + display;
-        AutomationProperties.SetName(window, "TalkToMeClaude " + state);
-        AutomationProperties.SetName(stateText, "TalkToMeClaude state " + state);
+        window.Title = "TalkToMeJohnny Native Spike - " + display;
+        AutomationProperties.SetName(window, "TalkToMeJohnny " + state);
+        AutomationProperties.SetName(stateText, "TalkToMeJohnny state " + state);
     }
 
     private void ShowAuxiliary(string surface)
     {
         if (auxiliaryWindow != null) auxiliaryWindow.Close();
         TextBlock text = new TextBlock { Text = surface.Replace('_', ' ') + " ready", FontSize = 18, Margin = new Thickness(16) };
-        AutomationProperties.SetName(text, "TalkToMeClaude " + surface.Replace('_', ' '));
+        AutomationProperties.SetName(text, "TalkToMeJohnny " + surface.Replace('_', ' '));
         auxiliaryWindow = new Window {
-            Title = "TalkToMeClaude " + surface.Replace('_', ' '), Width = 320, Height = 100,
+            Title = "TalkToMeJohnny " + surface.Replace('_', ' '), Width = 320, Height = 100,
             ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.ToolWindow,
             Topmost = true, Content = text, Focusable = false
         };

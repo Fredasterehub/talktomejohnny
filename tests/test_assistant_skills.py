@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from talktomeclaude.assistant.skills import (
     AssistantSkillInstaller,
@@ -31,8 +32,27 @@ class AssistantSkillInstallerTests(unittest.TestCase):
             codex,
             self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md",
         )
-        self.assertIn("/talktomejohnny on|off|status", claude.read_text(encoding="utf-8"))
-        self.assertIn("$talktomejohnny on|off|status", codex.read_text(encoding="utf-8"))
+        active_codex = (
+            self.home / ".codex" / "skills" / "talktomejohnny" / "SKILL.md"
+        )
+        self.assertTrue(active_codex.exists())
+        claude_content = claude.read_text(encoding="utf-8")
+        codex_content = codex.read_text(encoding="utf-8")
+        self.assertTrue(claude_content.startswith("---\nname: talktomejohnny\n"))
+        self.assertIn("description:", claude_content)
+        self.assertIn("/talktomejohnny on", claude_content)
+        self.assertIn("/talktomejohnny off", claude_content)
+        self.assertIn("/talktomejohnny status", claude_content)
+        self.assertIn("$talktomejohnny on", codex_content)
+        self.assertIn("$talktomejohnny off", codex_content)
+        self.assertIn("$talktomejohnny status", codex_content)
+        self.assertEqual(active_codex.read_text(encoding="utf-8"), codex_content)
+        self.assertIn(
+            "talktomejohnny hook install --provider claude", claude_content
+        )
+        self.assertIn(
+            "talktomejohnny hook install --provider codex", codex_content
+        )
 
     def test_install_is_idempotent_and_recognizes_owned_marker(self) -> None:
         path = self.installer.install("claude")
@@ -64,6 +84,9 @@ class AssistantSkillInstallerTests(unittest.TestCase):
         self.assertFalse(
             (self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md").exists()
         )
+        self.assertFalse(
+            (self.home / ".codex" / "skills" / "talktomejohnny" / "SKILL.md").exists()
+        )
 
         conflict = self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md"
         conflict.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +94,54 @@ class AssistantSkillInstallerTests(unittest.TestCase):
         with self.assertRaises(SkillInstallError):
             self.installer.uninstall("codex")
         self.assertEqual(conflict.read_text(encoding="utf-8"), "# keep me\n")
+
+    def test_codex_conflict_in_active_home_prevents_partial_install(self) -> None:
+        active = self.home / ".codex" / "skills" / "talktomejohnny" / "SKILL.md"
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_text("# user skill\n", encoding="utf-8")
+
+        with self.assertRaises(SkillInstallError):
+            self.installer.install("codex")
+
+        portable = self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md"
+        self.assertFalse(portable.exists())
+        self.assertEqual(active.read_text(encoding="utf-8"), "# user skill\n")
+
+    def test_codex_home_override_receives_a_copy(self) -> None:
+        codex_home = Path(self.temporary.name) / "custom-codex"
+        installer = AssistantSkillInstaller(home=self.home, codex_home=codex_home)
+
+        installer.install("codex")
+
+        self.assertTrue(
+            (codex_home / "skills" / "talktomejohnny" / "SKILL.md").exists()
+        )
+
+    def test_codex_secondary_write_failure_rolls_back_primary_install(self) -> None:
+        codex_home = Path(self.temporary.name) / "custom-codex"
+        installer = AssistantSkillInstaller(home=self.home, codex_home=codex_home)
+        target = codex_home / "skills" / "talktomejohnny" / "SKILL.md"
+        calls: list[Path] = []
+
+        def failing_write(path: Path, content: str) -> None:
+            calls.append(path)
+            if path == target:
+                raise OSError("disk full")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8", newline="\n")
+
+        with patch(
+            "talktomeclaude.assistant.skills._atomic_write_text",
+            side_effect=failing_write,
+        ):
+            with self.assertRaises(SkillInstallError):
+                installer.install("codex")
+
+        self.assertIn(target, calls)
+        self.assertFalse(
+            (self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md").exists()
+        )
+        self.assertFalse(target.exists())
 
     def test_install_control_skills_supports_both(self) -> None:
         written = install_control_skills(

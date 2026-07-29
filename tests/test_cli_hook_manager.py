@@ -25,6 +25,9 @@ class HookManagerCliTests(unittest.TestCase):
         return {
             "HOME": str(self.home),
             "USERPROFILE": str(self.home),
+            "TALKTOMEJOHNNY_HOOK_EXECUTABLE": str(
+                (self.home / "bin" / "talktomejohnny").resolve()
+            ),
             **extra,
         }
 
@@ -60,7 +63,9 @@ class HookManagerCliTests(unittest.TestCase):
 
     def test_status_reports_absent_without_creating_settings(self) -> None:
         result = self.runner.invoke(
-            main, ["hook", "status", "--settings", str(self.settings)]
+            main,
+            ["hook", "status", "--settings", str(self.settings)],
+            env=self.env(),
         )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(result.output, "absent\n")

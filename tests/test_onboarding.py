@@ -196,7 +196,7 @@ class OnboardingScreenTests(_ScreenHarness):
                 await pilot.press("enter")  # keep the default phrase
                 await pilot.pause()
                 self.assertEqual(screen._step, "namespaces")
-                await pilot.press("down", "enter")  # ask on first use
+                await pilot.press("enter")  # ask on first use (safe default)
                 await pilot.pause()
                 self.assertEqual(screen._step, "permissions")
                 await pilot.press("enter")  # off
@@ -353,7 +353,7 @@ class NamespacesPaneTests(_ScreenHarness):
         ):
             async with app.run_test() as pilot:
                 await self._to_namespaces(pilot, screen)
-                await pilot.press("down", "enter")  # Ask on first use
+                await pilot.press("enter")  # Ask on first use (safe default)
                 await pilot.pause()
                 self.assertEqual(config.command_namespace_policy(), "ask-first-use")
                 self.assertEqual(screen._step, "permissions")
@@ -370,7 +370,7 @@ class NamespacesPaneTests(_ScreenHarness):
         ):
             async with app.run_test() as pilot:
                 await self._to_namespaces(pilot, screen)
-                await pilot.press("down", "down", "enter")  # Only an allowlist…
+                await pilot.press("down", "enter")  # Only an allowlist…
                 await pilot.pause()
                 self.assertEqual(screen._step, "namespaces-allowlist")
                 self.assertEqual(config.command_namespace_policy(), "allowlist")
@@ -390,7 +390,7 @@ class NamespacesPaneTests(_ScreenHarness):
         ):
             async with app.run_test() as pilot:
                 await self._to_namespaces(pilot, screen)
-                await pilot.press("down", "down", "enter")
+                await pilot.press("down", "enter")
                 await pilot.pause()
                 screen.action_skip()  # the focused Input owns printable keys
                 await pilot.pause()
@@ -416,7 +416,7 @@ class NamespacesPaneTests(_ScreenHarness):
                 await pilot.press("s")
                 await pilot.pause()
                 self.assertEqual(screen._step, "permissions")
-        self.assertEqual(config.command_namespace_policy(), "allow-all")
+        self.assertEqual(config.command_namespace_policy(), "ask-first-use")
 
     async def test_wake_phrase_submission_routes_through_namespaces(self) -> None:
         from talktomeclaude.onboarding import OnboardingScreen

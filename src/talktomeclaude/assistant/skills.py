@@ -32,6 +32,12 @@ class SkillInspection:
     status: SkillStatus
 
 
+@dataclass(frozen=True, slots=True)
+class _ManagedSkillPath:
+    path: Path
+    existing: str | None
+
+
 def _home(environment: dict[str, str] | None = None) -> Path:
     active = os.environ if environment is None else environment
     for key in ("TALKTOMEJOHNNY_HOME", "TALKTOMECLAUDE_HOME", "HOME", "USERPROFILE"):
@@ -62,19 +68,52 @@ def _skill_path(
     return _skill_root(provider, environment=environment) / "talktomejohnny" / "SKILL.md"
 
 
+def _skill_paths(
+    provider: ProviderName,
+    *,
+    environment: dict[str, str] | None = None,
+) -> tuple[Path, ...]:
+    """Return every supported skill location, primary first."""
+
+    primary = _skill_path(provider, environment=environment)
+    if provider == "claude":
+        return (primary,)
+    if provider != "codex":
+        raise ValueError(f"unsupported assistant provider {provider!r}")
+
+    active = os.environ if environment is None else environment
+    configured_home = active.get("CODEX_HOME")
+    codex_home = (
+        Path(configured_home).expanduser()
+        if configured_home
+        else _home(environment) / ".codex"
+    )
+    active_path = codex_home / "skills" / "talktomejohnny" / "SKILL.md"
+    return tuple(dict.fromkeys((primary, active_path)))
+
+
 def _skill_content(provider: ProviderName) -> str:
-    command = f"{_COMMAND_PREFIX[provider]}talktomejohnny on|off|status"
+    prefix = _COMMAND_PREFIX[provider]
+    repair_command = f"talktomejohnny hook install --provider {provider}"
     return (
+        "---\n"
+        "name: talktomejohnny\n"
+        "description: Attach, detach, or check this assistant session for local TalkToMeJohnny voice replies.\n"
+        "---\n\n"
         "# TalkToMeJohnny control\n\n"
         f"{_SKILL_MARKER}\n\n"
         "This command is intercepted locally by TalkToMeJohnny before the assistant sees it.\n\n"
-        f"Use `{command}` to attach, detach, or inspect this session.\n\n"
+        "Use one exact command to control this session:\n\n"
+        f"- `{prefix}talktomejohnny on`\n"
+        f"- `{prefix}talktomejohnny off`\n"
+        f"- `{prefix}talktomejohnny status`\n\n"
         "If you are reading this text, the local TalkToMeJohnny lifecycle hook is missing,\n"
         "untrusted, offline, or not installed for this CLI.\n\n"
         "Do not run tools.\n"
         "Do not modify files.\n"
         "Reply with exactly one short sentence:\n"
-        "TalkToMeJohnny local control is unavailable; run `talktomejohnny hook install` and trust the installed hooks.\n"
+        "TalkToMeJohnny local control is unavailable; run "
+        f"`{repair_command}` and trust the installed hooks.\n"
     )
 
 
@@ -105,60 +144,119 @@ def _provider_sequence(provider: str) -> tuple[ProviderName, ...]:
 class AssistantSkillInstaller:
     """Install or remove the owned TalkToMeJohnny control skill safely."""
 
-    def __init__(self, home: str | os.PathLike[str] | None = None) -> None:
+    def __init__(
+        self,
+        home: str | os.PathLike[str] | None = None,
+        *,
+        codex_home: str | os.PathLike[str] | None = None,
+    ) -> None:
         self._home_override = None if home is None else Path(home).expanduser()
+        self._codex_home_override = (
+            None if codex_home is None else Path(codex_home).expanduser()
+        )
 
     def _environment(self) -> dict[str, str] | None:
-        if self._home_override is None:
+        if self._home_override is None and self._codex_home_override is None:
             return None
-        return {"HOME": str(self._home_override), "USERPROFILE": str(self._home_override)}
+        home = self._home_override or Path.home()
+        environment = {"HOME": str(home), "USERPROFILE": str(home)}
+        if self._codex_home_override is not None:
+            environment["CODEX_HOME"] = str(self._codex_home_override)
+        return environment
 
-    def inspect(self, provider: ProviderName) -> SkillInspection:
-        selected = provider
-        path = _skill_path(selected, environment=self._environment())
+    def _inspect_path(self, provider: ProviderName, path: Path) -> SkillInspection:
         if not path.exists():
-            return SkillInspection(selected, path, SkillStatus.ABSENT)
+            return SkillInspection(provider, path, SkillStatus.ABSENT)
         try:
             existing = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise SkillInstallError("assistant skill is unreadable") from exc
-        expected = _skill_content(selected)
+        expected = _skill_content(provider)
         status = (
             SkillStatus.INSTALLED
             if _is_owned(existing, expected)
             else SkillStatus.CONFLICT
         )
-        return SkillInspection(selected, path, status)
+        return SkillInspection(provider, path, status)
+
+    def _inspections(self, provider: ProviderName) -> tuple[SkillInspection, ...]:
+        return tuple(
+            self._inspect_path(provider, path)
+            for path in _skill_paths(provider, environment=self._environment())
+        )
+
+    def _managed_paths(self, provider: ProviderName) -> tuple[_ManagedSkillPath, ...]:
+        managed: list[_ManagedSkillPath] = []
+        for path in _skill_paths(provider, environment=self._environment()):
+            if not path.exists():
+                managed.append(_ManagedSkillPath(path, None))
+                continue
+            try:
+                existing = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise SkillInstallError("assistant skill is unreadable") from exc
+            managed.append(_ManagedSkillPath(path, existing))
+        return tuple(managed)
+
+    def inspect(self, provider: ProviderName) -> SkillInspection:
+        inspections = self._inspections(provider)
+        if any(item.status is SkillStatus.CONFLICT for item in inspections):
+            status = SkillStatus.CONFLICT
+        elif all(item.status is SkillStatus.INSTALLED for item in inspections):
+            status = SkillStatus.INSTALLED
+        else:
+            status = SkillStatus.ABSENT
+        return SkillInspection(provider, inspections[0].path, status)
 
     def install(self, provider: ProviderName) -> Path:
-        inspection = self.inspect(provider)
         expected = _skill_content(provider)
-        if inspection.status is SkillStatus.CONFLICT:
-            raise SkillInstallError("assistant skill path contains user-authored content")
-        if inspection.status is SkillStatus.ABSENT or (
-            inspection.path.read_text(encoding="utf-8") != expected
+        managed = self._managed_paths(provider)
+        if any(
+            item.existing is not None and not _is_owned(item.existing, expected)
+            for item in managed
         ):
-            try:
-                _atomic_write_text(inspection.path, expected)
-            except OSError as exc:
-                raise SkillInstallError("assistant skill update failed") from exc
-        return inspection.path
+            raise SkillInstallError("assistant skill path contains user-authored content")
+
+        def rollback_writes() -> None:
+            for rollback in reversed(written):
+                if rollback.existing is None:
+                    rollback.path.unlink(missing_ok=True)
+                else:
+                    _atomic_write_text(rollback.path, rollback.existing)
+
+        written: list[_ManagedSkillPath] = []
+        try:
+            for item in managed:
+                if item.existing == expected:
+                    continue
+                _atomic_write_text(item.path, expected)
+                written.append(item)
+        except OSError as exc:
+            rollback_writes()
+            raise SkillInstallError("assistant skill update failed") from exc
+        except BaseException:
+            rollback_writes()
+            raise
+        return managed[0].path
 
     def uninstall(self, provider: ProviderName) -> bool:
-        inspection = self.inspect(provider)
-        if inspection.status is SkillStatus.ABSENT:
+        inspections = self._inspections(provider)
+        if all(item.status is SkillStatus.ABSENT for item in inspections):
             return False
-        if inspection.status is SkillStatus.CONFLICT:
+        if any(item.status is SkillStatus.CONFLICT for item in inspections):
             raise SkillInstallError("assistant skill path contains user-authored content")
-        try:
-            inspection.path.unlink(missing_ok=True)
-        except OSError as exc:
-            raise SkillInstallError("assistant skill removal failed") from exc
-        directory = inspection.path.parent
-        try:
-            directory.rmdir()
-        except OSError:
-            pass
+        for inspection in inspections:
+            if inspection.status is SkillStatus.ABSENT:
+                continue
+            try:
+                inspection.path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise SkillInstallError("assistant skill removal failed") from exc
+            directory = inspection.path.parent
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
         return True
 
 
@@ -169,7 +267,11 @@ def install_control_skills(
 ) -> tuple[Path, ...]:
     """Install the owned TalkToMeJohnny control skill for one or both CLIs."""
 
-    installer = AssistantSkillInstaller(home=_home(environment))
+    active = os.environ if environment is None else environment
+    installer = AssistantSkillInstaller(
+        home=_home(environment),
+        codex_home=active.get("CODEX_HOME"),
+    )
     return tuple(installer.install(selected) for selected in _provider_sequence(provider))
 
 

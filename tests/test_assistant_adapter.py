@@ -299,6 +299,13 @@ class ClaudeHookManagerTests(unittest.TestCase):
     def test_resolve_hook_executable_and_session_manager_quote_safely(self) -> None:
         with self.assertRaisesRegex(HookSettingsError, "could not be resolved safely"):
             hook_module.resolve_hook_executable({"PATH": ""})
+        with self.assertRaisesRegex(HookSettingsError, "absolute path"):
+            hook_module.resolve_hook_executable(
+                {
+                    "PATH": "",
+                    "TALKTOMEJOHNNY_HOOK_EXECUTABLE": "talktomejohnny",
+                }
+            )
 
         windows_path = r"C:\Program Files\Talk To Me\talktomejohnny.exe"
         manager = SessionControlHookManager(

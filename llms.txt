@@ -9,7 +9,7 @@ aliases:
 description: Local-first voice medium for Claude Code and Codex CLI. Speech-to-text and speech output stay local. Exact-session attachment is handled by deterministic hooks.
 repo: https://github.com/Fredasterehub/talktomejohnny
 license: MIT
-version: 0.1.0
+version: 0.1.1
 entrypoint: talktomejohnny
 ```
 
@@ -29,7 +29,7 @@ note: Existing settings, voice references, and caches must be copied forward non
 ```yaml
 python: ">=3.11"
 system:
-  windows: "Git for Windows is recommended if you want bash hook execution for the automatic reply-speaking path."
+  windows: "Native user lifecycle hooks execute the installed TalkToMeJohnny console command; Git Bash is not required."
   linux: "libportaudio2 + git"
   macos: "git via Xcode Command Line Tools on first use"
 assistant_hosts:
@@ -74,6 +74,9 @@ steps:
 
 ## ACTIVATION
 ```yaml
+install_user_hooks:
+  - talktomejohnny hook install --provider claude
+  - talktomejohnny hook install --provider codex
 claude_code:
   normal_launch: claude
   exact_attach_commands:
@@ -148,8 +151,8 @@ notes:
 ## GOTCHAS
 ```yaml
 windows_hooks:
-  note: "Native Windows may need Git for Windows so Claude Code can route bash hooks correctly."
-  recovery: "The CLI still works without it; only the automatic reply-speaking hook depends on bash hook execution."
+  note: "User lifecycle hooks resolve and pin the installed TalkToMeJohnny executable instead of invoking a shell script from PATH."
+  recovery: "Re-run the provider-specific hook install command, then trust the owned hook in the assistant CLI when prompted."
 security:
   note: "Do not store secrets, tokens, or private paths in the repository or in public docs."
 ```

@@ -127,7 +127,7 @@ class HotkeyWindow:
         user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
         kernel32.GetModuleHandleW.restype = wintypes.HINSTANCE
         self._thread_id = kernel32.GetCurrentThreadId()
-        class_name = f"TalkToMeClaudeSpikeHotkey_{os.getpid()}_{self.virtual_key}"
+        class_name = f"TalkToMeJohnnySpikeHotkey_{os.getpid()}_{self.virtual_key}"
 
         @WNDPROC
         def wndproc(hwnd: int, msg: int, wparam: int, lparam: int) -> int:

@@ -17,7 +17,7 @@ CUES = {
     "transcribing": "[>]",
     "awaiting confirmation": "[?]",
     "delivering": "[>>]",
-    "waiting for Claude": "[...]",
+    "waiting for assistant": "[...]",
     "planning": "[::]",
     "speaking": "[))]",
     "paused": "[||]",
@@ -59,7 +59,7 @@ def main() -> int:
                 applied_ns=monotonic_ns(),
                 display_text=f"{cue} {state}",
                 cue=cue,
-                accessibility_name=f"TalkToMeClaude {state}",
+                accessibility_name=f"TalkToMeJohnny {state}",
             )
         elif kind == "cycle":
             emitter.emit("cycle_ack", seq=message.get("seq"), phases=["start", "stop", "state", "reply"], applied_ns=monotonic_ns())

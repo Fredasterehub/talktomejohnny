@@ -11,7 +11,7 @@ Candidates:
 Run the binding automated sample from the supported shared venv:
 
 ```powershell
-& "$env:USERPROFILE\talktomeclaude\.venv\Scripts\python.exe" `
+& "$env:USERPROFILE\talktomejohnny\.venv\Scripts\python.exe" `
   .\tools\spikes\windows_companion\run_spike.py `
   --resource-seconds 300 --latency-events 250 --lifecycle-cycles 25
 ```

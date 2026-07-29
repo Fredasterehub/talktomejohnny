@@ -41,7 +41,7 @@ _HINT_EXTRA = {
     "finish": "T Test the voice   ·   ",
 }
 _SAMPLE_TEXT = "Hi. This is how I sound."
-_TEST_TEXT = "Talk to me, Claude. The voice link is live."
+_TEST_TEXT = "Talk to me, Johnny. The voice link is live."
 
 
 def _synth_and_play(text: str, voice_name: str | None) -> None:
@@ -77,7 +77,7 @@ class OnboardingScreen(Screen[bool]):
 
     def _widgets_for(self, step: str):
         if step == "welcome":
-            yield Static("Welcome to Talk To Me, Claude")
+            yield Static("Welcome to TalkToMeJohnny")
             yield Static(
                 "Everything runs locally: your voice, the transcription, and "
                 "the spoken replies never leave your machines."
@@ -111,7 +111,7 @@ class OnboardingScreen(Screen[bool]):
             yield Static(self._recipe_text(), id="ob-recipe-text")
             yield OptionList("Continue", id="ob-clone-recipe-text")
         elif step == "claude":
-            yield Static("Where does Claude Code run?")
+            yield Static("Where does your assistant CLI run?")
             yield OptionList(
                 "On this machine (default)",
                 "On a remote server over SSH",
@@ -135,7 +135,7 @@ class OnboardingScreen(Screen[bool]):
         elif step == "spoken":
             yield Static("Spoken replies")
             yield OptionList(
-                "Speak Claude's replies aloud (default)",
+                "Speak assistant replies aloud (default)",
                 "Stay silent (text only)",
                 id="ob-spoken",
             )
@@ -161,8 +161,8 @@ class OnboardingScreen(Screen[bool]):
                 "Voice-command namespaces (policy only — enforced once a session exists)"
             )
             yield OptionList(
-                "Allow all namespaces (default)",
-                "Ask on first use",
+                "Allow all namespaces",
+                "Ask on first use (recommended default)",
                 "Only an allowlist…",
                 id="ob-namespaces",
             )
@@ -174,7 +174,9 @@ class OnboardingScreen(Screen[bool]):
                 placeholder="kiln, gsd",
             )
         elif step == "permissions":
-            yield Static("Claude permission posture (off is the safe default)")
+            yield Static(
+                "Claude Code permission posture (off is safe; Codex is unchanged)"
+            )
             yield OptionList(*config.CLAUDE_PERMISSIONS, id="ob-permissions")
         else:  # finish
             yield Static("All set")

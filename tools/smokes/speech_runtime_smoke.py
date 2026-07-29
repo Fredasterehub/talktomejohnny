@@ -107,7 +107,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
             SynthesisRequest(
                 0,
                 "g6-physical-interruption",
-                "TalkToMeClaude is verifying bounded interruption on the selected voice.",
+                "TalkToMeJohnny is verifying bounded interruption on the selected voice.",
             ),
             lambda result: (results.append(result), result_ready.set()),
         )

@@ -32,7 +32,7 @@ CUES = {
     "transcribing": "(>)",
     "awaiting confirmation": "(?)",
     "delivering": "(>>)",
-    "waiting for Claude": "(...)",
+    "waiting for assistant": "(...)",
     "planning": "(::)",
     "speaking": "()))",
     "paused": "(||)",
@@ -107,7 +107,7 @@ def main() -> int:
     apply_no_activate(hwnd)
     ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
     apply_no_activate(hwnd)
-    root.title("TalkToMeClaude Spike - (.) Idle")
+    root.title("TalkToMeJohnny Spike - (.) Idle")
     closing = False
     auxiliary: tk.Toplevel | None = None
 
@@ -116,7 +116,7 @@ def main() -> int:
         display = f"{cue} {state}"
         state_var.set(display)
         detail_var.set("State supplied by the versioned core probe")
-        root.title(f"TalkToMeClaude Spike - {display}")
+        root.title(f"TalkToMeJohnny Spike - {display}")
         root.update_idletasks()
         return cue, display
 
@@ -136,7 +136,7 @@ def main() -> int:
         apply_no_activate(aux_hwnd)
         ctypes.windll.user32.ShowWindow(aux_hwnd, SW_SHOWNOACTIVATE)
         apply_no_activate(aux_hwnd)
-        auxiliary.title(f"TalkToMeClaude {surface.replace('_', ' ')}")
+        auxiliary.title(f"TalkToMeJohnny {surface.replace('_', ' ')}")
 
     def request_close() -> None:
         nonlocal closing
@@ -163,7 +163,7 @@ def main() -> int:
                     applied_ns=monotonic_ns(),
                     display_text=display,
                     cue=cue,
-                    accessibility_name=f"TalkToMeClaude {state}",
+                    accessibility_name=f"TalkToMeJohnny {state}",
                 )
             elif kind == "cycle":
                 for state in ("recording", "idle", "planning", "speaking"):

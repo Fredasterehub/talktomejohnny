@@ -249,7 +249,13 @@ class HookBootstrapTests(unittest.TestCase):
             home = Path(temporary) / "home"
             with mock.patch.dict(
                 "os.environ",
-                {"HOME": str(home), "USERPROFILE": str(home)},
+                {
+                    "HOME": str(home),
+                    "USERPROFILE": str(home),
+                    "TALKTOMEJOHNNY_HOOK_EXECUTABLE": str(
+                        (home / "bin" / "talktomejohnny").resolve()
+                    ),
+                },
                 clear=False,
             ):
                 ensure_companion_hook(None, local_settings_path=settings)
@@ -284,7 +290,13 @@ class HookBootstrapTests(unittest.TestCase):
             home = Path(temporary) / "home"
             with mock.patch.dict(
                 "os.environ",
-                {"HOME": str(home), "USERPROFILE": str(home)},
+                {
+                    "HOME": str(home),
+                    "USERPROFILE": str(home),
+                    "TALKTOMEJOHNNY_HOOK_EXECUTABLE": str(
+                        (home / "bin" / "talktomejohnny").resolve()
+                    ),
+                },
                 clear=False,
             ):
                 ensure_companion_hook(

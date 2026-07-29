@@ -1,7 +1,7 @@
 """Real Proxmox Unicode/reconnect smoke for the durable reply protocol.
 
 The smoke stages code only under a unique remote /tmp directory.  It never
-reads or changes Claude settings, TalkToMeClaude config, voices, or caches.
+reads or changes assistant settings, TalkToMeJohnny config, voices, or caches.
 Its report contains only synthetic identities, hashes, counts, and booleans.
 """
 

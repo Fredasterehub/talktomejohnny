@@ -81,7 +81,12 @@ def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
         "TALKTOMEJOHNNY_HOOK_EXECUTABLE"
     ) or active.get("TALKTOMECLAUDE_HOOK_EXECUTABLE")
     if isinstance(override, str) and override.strip():
-        return override.strip()
+        override_path = Path(override.strip()).expanduser()
+        if not override_path.is_absolute():
+            raise HookSettingsError(
+                "assistant hook executable override must be an absolute path"
+            )
+        return str(override_path)
     for candidate in ("talktomejohnny", "talktomeclaude"):
         resolved = shutil.which(candidate, path=active.get("PATH"))
         if resolved:

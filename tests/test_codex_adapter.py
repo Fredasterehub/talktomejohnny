@@ -208,7 +208,9 @@ class CodexCliIntegrationTests(unittest.TestCase):
                 **os.environ,
                 "HOME": str(self.root / "home"),
                 "USERPROFILE": str(self.root / "home"),
-                "TALKTOMEJOHNNY_HOOK_EXECUTABLE": "/usr/local/bin/talktomejohnny",
+                "TALKTOMEJOHNNY_HOOK_EXECUTABLE": str(
+                    (self.root / "bin" / "talktomejohnny").resolve()
+                ),
             },
         )
 

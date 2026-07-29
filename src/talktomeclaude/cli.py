@@ -482,7 +482,7 @@ def filter_command(transcript) -> None:
     """Extract spoken dialogue from a transcript.
 
     Reads a Claude Code JSONL transcript (or - for stdin) and prints only
-    Claude's assistant prose — never tool calls, tool results, code blocks,
+    assistant prose — never tool calls, tool results, code blocks,
     or thinking.
     """
     for dialogue in iter_dialogue(transcript):
