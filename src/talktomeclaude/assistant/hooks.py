@@ -8,6 +8,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from enum import StrEnum
@@ -87,6 +88,19 @@ def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
                 "assistant hook executable override must be an absolute path"
             )
         return str(override_path)
+    argv0 = Path(sys.argv[0]).expanduser()
+    if argv0.is_absolute() and argv0.exists():
+        return str(argv0.resolve())
+    executable_parent = Path(sys.executable).expanduser().resolve().parent
+    for candidate in (
+        "talktomejohnny.exe",
+        "talktomejohnny",
+        "talktomeclaude.exe",
+        "talktomeclaude",
+    ):
+        sibling = executable_parent / candidate
+        if sibling.exists():
+            return str(sibling)
     for candidate in ("talktomejohnny", "talktomeclaude"):
         resolved = shutil.which(candidate, path=active.get("PATH"))
         if resolved:

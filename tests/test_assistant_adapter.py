@@ -297,15 +297,46 @@ class ClaudeHookManagerTests(unittest.TestCase):
         self.assertNotIn("talktomeclaude hook session", json.dumps(document))
 
     def test_resolve_hook_executable_and_session_manager_quote_safely(self) -> None:
-        with self.assertRaisesRegex(HookSettingsError, "could not be resolved safely"):
-            hook_module.resolve_hook_executable({"PATH": ""})
-        with self.assertRaisesRegex(HookSettingsError, "absolute path"):
-            hook_module.resolve_hook_executable(
-                {
-                    "PATH": "",
-                    "TALKTOMEJOHNNY_HOOK_EXECUTABLE": "talktomejohnny",
-                }
-            )
+        with tempfile.TemporaryDirectory() as temporary:
+            interpreter = Path(temporary) / "python.exe"
+            interpreter.write_text("", encoding="utf-8")
+            with mock.patch.object(hook_module.sys, "argv", ["talktomejohnny"]):
+                with mock.patch.object(
+                    hook_module.sys, "executable", str(interpreter)
+                ):
+                    with self.assertRaisesRegex(
+                        HookSettingsError, "could not be resolved safely"
+                    ):
+                        hook_module.resolve_hook_executable({"PATH": ""})
+                    with self.assertRaisesRegex(HookSettingsError, "absolute path"):
+                        hook_module.resolve_hook_executable(
+                            {
+                                "PATH": "",
+                                "TALKTOMEJOHNNY_HOOK_EXECUTABLE": "talktomejohnny",
+                            }
+                        )
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "talktomejohnny.exe"
+            executable.write_text("", encoding="utf-8")
+            with mock.patch.object(hook_module.sys, "argv", [str(executable)]):
+                self.assertEqual(
+                    hook_module.resolve_hook_executable({"PATH": ""}),
+                    str(executable.resolve()),
+                )
+        with tempfile.TemporaryDirectory() as temporary:
+            scripts = Path(temporary)
+            executable = scripts / "talktomejohnny.exe"
+            interpreter = scripts / "python.exe"
+            executable.write_text("", encoding="utf-8")
+            interpreter.write_text("", encoding="utf-8")
+            with mock.patch.object(hook_module.sys, "argv", ["talktomejohnny"]):
+                with mock.patch.object(
+                    hook_module.sys, "executable", str(interpreter)
+                ):
+                    self.assertEqual(
+                        hook_module.resolve_hook_executable({"PATH": ""}),
+                        str(executable),
+                    )
 
         windows_path = r"C:\Program Files\Talk To Me\talktomejohnny.exe"
         manager = SessionControlHookManager(

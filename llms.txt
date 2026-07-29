@@ -9,7 +9,7 @@ aliases:
 description: Local-first voice medium for Claude Code and Codex CLI. Speech-to-text and speech output stay local. Exact-session attachment is handled by deterministic hooks.
 repo: https://github.com/Fredasterehub/talktomejohnny
 license: MIT
-version: 0.1.2
+version: 0.1.3
 entrypoint: talktomejohnny
 ```
 
