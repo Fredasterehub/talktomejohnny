@@ -227,7 +227,10 @@ class CompanionControllerTests(unittest.TestCase):
         self.assertEqual(
             self.controller.snapshot.runtime.phase, RuntimePhase.WAITING_FOR_CLAUDE
         )
-        self.assertEqual(observed[-1].detail, "Transcript delivered; waiting for Claude")
+        self.assertEqual(
+            observed[-1].detail,
+            "Transcript delivered; waiting for assistant",
+        )
 
     def test_hold_to_talk_finishes_only_through_release_boundary(self) -> None:
         self.controller.set_capture_mode(CaptureMode.HOLD_TO_TALK)
@@ -441,6 +444,28 @@ class CompanionControllerTests(unittest.TestCase):
         self.assertEqual(self.speech.events, [event, muted])
         self.assertTrue(self.speech.muted)
         self.assertEqual(self.controller.snapshot.runtime.phase, RuntimePhase.IDLE)
+
+    def test_muting_active_reply_finishes_semantic_speech_phase(self) -> None:
+        event = ReplyEvent.create(
+            session="session-mute",
+            event_id="reply-mute",
+            answer="long reply that is currently speaking",
+        )
+        self.assertTrue(self.controller.receive_reply(event))
+        self.assertEqual(
+            self.controller.snapshot.runtime.phase,
+            RuntimePhase.SPEAKING,
+        )
+
+        muted = self.controller.dispatch(
+            CompanionIntent(IntentKind.TOGGLE_OUTPUT_MUTE)
+        )
+
+        self.assertEqual(muted.runtime.phase, RuntimePhase.IDLE)
+        self.assertTrue(muted.output_muted)
+        self.assertEqual(muted.detail, "Spoken output muted")
+        self.assertEqual(self.speech.stops, 1)
+        self.assertEqual(self.persisted_mute, [True])
 
     def test_new_recording_interrupts_active_speech_before_microphone_start(self) -> None:
         event = ReplyEvent.create(

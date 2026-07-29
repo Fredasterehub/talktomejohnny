@@ -129,6 +129,27 @@ class ConfigSettingsTests(unittest.TestCase):
         config.set_assistant_auto_submit(True)
         self.assertTrue(config.assistant_auto_submit_enabled())
 
+    def test_assistant_provider_defaults_to_claude_and_round_trips(self) -> None:
+        self.assertEqual(config.assistant_provider(), "claude")
+        config.set_assistant_provider("codex")
+        self.assertEqual(config.assistant_provider(), "codex")
+        self.assertEqual(config.load()["assistant-provider"], "codex")
+        config.set_assistant_provider("claude")
+        self.assertEqual(config.assistant_provider(), "claude")
+
+    def test_assistant_provider_rejects_unknown_value_without_mutation(self) -> None:
+        config.set_assistant_provider("codex")
+        before = config.load()
+
+        with self.assertRaises(ValueError):
+            config.set_assistant_provider("other")
+
+        self.assertEqual(config.load(), before)
+
+    def test_assistant_provider_ignores_corrupt_stored_value(self) -> None:
+        config.set_value("assistant-provider", "other")
+        self.assertEqual(config.assistant_provider(), "claude")
+
 
 if __name__ == "__main__":
     unittest.main()

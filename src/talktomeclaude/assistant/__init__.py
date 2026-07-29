@@ -1,4 +1,4 @@
-"""Assistant-specific integration contracts and Claude Code adapter."""
+"""Assistant integration contracts for Claude Code and Codex CLI."""
 
 from .claude import (
     AssistantAdapter,
@@ -10,8 +10,11 @@ from .claude import (
 from talktomeclaude.reply_protocol import canonical_reply_digest
 from .hooks import (
     CLAUDE_STOP_HOOK_COMMAND,
+    CODEX_OWNED_HOOK_MARKER,
+    CODEX_STOP_HOOK_COMMAND,
     OWNED_HOOK_MARKER,
     ClaudeHookManager,
+    CodexHookManager,
     HookInspection,
     HookStatus,
 )
@@ -28,8 +31,11 @@ __all__ = [
     "AssistantEventCode",
     "AssistantEventResult",
     "CLAUDE_STOP_HOOK_COMMAND",
+    "CODEX_OWNED_HOOK_MARKER",
+    "CODEX_STOP_HOOK_COMMAND",
     "ClaudeCodeAdapter",
     "ClaudeHookManager",
+    "CodexHookManager",
     "DirectorEventGate",
     "DirectorLaunchGuard",
     "DirectorLease",

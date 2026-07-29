@@ -12,8 +12,11 @@ from talktomeclaude.assistant import (
     AssistantAdapter,
     AssistantEventCode,
     CLAUDE_STOP_HOOK_COMMAND,
+    CODEX_OWNED_HOOK_MARKER,
+    CODEX_STOP_HOOK_COMMAND,
     ClaudeCodeAdapter,
     ClaudeHookManager,
+    CodexHookManager,
     DirectorEventGate,
     DirectorLaunchGuard,
     HookStatus,
@@ -257,6 +260,94 @@ class ClaudeHookManagerTests(unittest.TestCase):
 
         self.assertEqual(json.loads(self.path.read_text(encoding="utf-8")), {"generation": 3})
         self.assertEqual(manager.inspect().status, HookStatus.ABSENT)
+
+
+class CodexHookManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = Path(self.temporary.name) / "hooks.json"
+        self.manager = CodexHookManager(self.path)
+
+    def test_install_is_additive_owned_and_idempotent(self) -> None:
+        existing = {
+            "description": "existing Codex hooks",
+            "hooks": {
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "other-stop",
+                                "timeout": 9,
+                            }
+                        ]
+                    }
+                ],
+                "PostToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{"type": "command", "command": "audit"}],
+                    }
+                ],
+            },
+        }
+        self.path.write_text(json.dumps(existing), encoding="utf-8")
+
+        first = self.manager.install()
+        installed_wire = self.path.read_bytes()
+        second = self.manager.install()
+        document = json.loads(installed_wire)
+
+        self.assertEqual(first.status, HookStatus.INSTALLED)
+        self.assertEqual(second.status, HookStatus.INSTALLED)
+        self.assertEqual(self.path.read_bytes(), installed_wire)
+        self.assertEqual(document["description"], existing["description"])
+        self.assertEqual(document["hooks"]["Stop"][0], existing["hooks"]["Stop"][0])
+        self.assertEqual(
+            document["hooks"]["Stop"][1]["hooks"],
+            [{"type": "command", "command": CODEX_STOP_HOOK_COMMAND}],
+        )
+        self.assertEqual(self.manager.inspect().owned_entries, 1)
+
+    def test_uninstall_removes_only_codex_entry(self) -> None:
+        self.manager.install()
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        document["hooks"]["Stop"].insert(
+            0,
+            {"hooks": [{"type": "command", "command": "other-stop"}]},
+        )
+        self.path.write_text(json.dumps(document), encoding="utf-8")
+
+        self.assertEqual(self.manager.uninstall().status, HookStatus.ABSENT)
+        after = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            after,
+            {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other-stop"}]}]}},
+        )
+
+    def test_marker_conflict_fails_closed(self) -> None:
+        conflict = {
+            "hooks": {
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": f"other --owner-marker {CODEX_OWNED_HOOK_MARKER}",
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        self.path.write_text(json.dumps(conflict), encoding="utf-8")
+        before = self.path.read_bytes()
+
+        self.assertEqual(self.manager.inspect().status, HookStatus.CONFLICT)
+        with self.assertRaises(HookSettingsError):
+            self.manager.install()
+        self.assertEqual(self.path.read_bytes(), before)
 
 
 class PayloadValidationTests(unittest.TestCase):

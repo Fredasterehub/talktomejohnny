@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "talktomeclaude"
 version = "0.0.1"
-description = "A local-first voice medium for Claude Code."
+description = "A local-first voice medium for Claude Code and Codex CLI."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

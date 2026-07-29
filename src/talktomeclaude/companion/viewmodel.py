@@ -32,12 +32,12 @@ _PRESENTATION = {
     RuntimePhase.TRANSCRIBING: ("TRANSCRIBING", "Transcribing speech"),
     RuntimePhase.AWAITING_CONFIRMATION: ("CONFIRM", "Review transcript"),
     RuntimePhase.DELIVERING: ("DELIVERING", "Delivering transcript"),
-    RuntimePhase.WAITING_FOR_CLAUDE: ("WAITING", "Waiting for Claude"),
+    RuntimePhase.WAITING_FOR_CLAUDE: ("WAITING", "Waiting for assistant"),
     RuntimePhase.PLANNING: ("PLANNING", "Preparing spoken reply"),
     RuntimePhase.SPEAKING: ("SPEAKING", "Speaking reply"),
     RuntimePhase.PAUSED: ("PAUSED", "Speech paused"),
     RuntimePhase.STOPPING: ("STOPPING", "Stopping companion"),
-    RuntimePhase.DISCONNECTED: ("DISCONNECTED", "Claude connection interrupted"),
+    RuntimePhase.DISCONNECTED: ("DISCONNECTED", "Assistant connection interrupted"),
     RuntimePhase.RECOVERABLE_ERROR: ("ERROR", "Companion needs attention"),
 }
 

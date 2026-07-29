@@ -1,4 +1,4 @@
-"""Persistent configuration state shared by the CLI and the Claude Code hook.
+"""Persistent configuration shared by the CLI and assistant lifecycle hooks.
 
 Settings live in a single JSON file at one stable location — an explicit
 ``TALKTOMECLAUDE_CONFIG_DIR`` override, else the user's XDG config directory
@@ -20,6 +20,8 @@ RECORDING_MODES = ("always-on", "push-to-talk", "push-toggle")
 DEFAULT_RECORDING_MODE = "push-to-talk"
 DEFAULT_COMPANION_RECORDING_MODE = "push-toggle"
 DEFAULT_WAKE_PHRASE = "yo claude"
+ASSISTANT_PROVIDERS = ("claude", "codex")
+DEFAULT_ASSISTANT_PROVIDER = "claude"
 CLAUDE_PERMISSIONS = ("off", "skip", "acceptEdits", "bypassPermissions")
 STT_DEVICES = ("auto", "cuda", "cpu")
 COMMAND_NAMESPACE_POLICIES = ("allow-all", "ask-first-use", "allowlist")
@@ -226,9 +228,26 @@ def set_assistant_auto_submit(enabled: bool) -> None:
     set_value("assistant-auto-submit", "on" if enabled else "off")
 
 
+def assistant_provider() -> str:
+    """The CLI whose authoritative completion events drive spoken replies."""
+
+    value = load().get("assistant-provider")
+    return value if value in ASSISTANT_PROVIDERS else DEFAULT_ASSISTANT_PROVIDER
+
+
+def set_assistant_provider(value: str) -> None:
+    """Persist one supported assistant provider without changing other settings."""
+
+    if value not in ASSISTANT_PROVIDERS:
+        raise ValueError(
+            f"unknown assistant provider {value!r}: expected one of "
+            f"{', '.join(ASSISTANT_PROVIDERS)}"
+        )
+    set_value("assistant-provider", value)
+
+
 def remote() -> str | None:
-    """The persisted SSH target (``user@host``) Claude Code runs on, or None
-    for a fully local install."""
+    """The persisted SSH target (``user@host``) the assistant runs on, or None."""
     value = load().get("remote")
     return value if isinstance(value, str) and value.strip() else None
 
@@ -242,8 +261,7 @@ def set_remote(value: str | None) -> None:
 
 
 def remote_cwd() -> str | None:
-    """The persisted project directory for remote Claude sessions, or None
-    to use the remote login shell's home directory."""
+    """The persisted project directory for remote assistant sessions, or None."""
     value = load().get("remote-cwd")
     return value if isinstance(value, str) and value.strip() else None
 

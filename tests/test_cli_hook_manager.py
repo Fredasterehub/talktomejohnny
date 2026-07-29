@@ -60,6 +60,26 @@ class HookManagerCliTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         stream.assert_called_once_with(["stream"])
 
+    def test_codex_stream_uses_the_isolated_provider_spool(self) -> None:
+        config_root = Path(self.temporary.name) / "config"
+        with mock.patch(
+            "talktomeclaude.reply.remote.main", return_value=0
+        ) as stream:
+            result = self.runner.invoke(
+                main,
+                ["hook", "stream", "--provider", "codex"],
+                env={"TALKTOMECLAUDE_CONFIG_DIR": str(config_root)},
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        stream.assert_called_once_with(
+            [
+                "stream",
+                "--spool-root",
+                str(config_root / "reply-spool-codex"),
+            ]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

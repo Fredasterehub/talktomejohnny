@@ -17,7 +17,7 @@ from talktomeclaude.tts import (
 @click.group(invoke_without_command=True)
 @click.pass_context
 def main(ctx: click.Context) -> None:
-    """Use voice as a medium for Claude Code."""
+    """Use voice as a medium for Claude Code or Codex CLI."""
     if ctx.invoked_subcommand is None:
         from talktomeclaude import config, onboarding
 
@@ -44,6 +44,38 @@ def setup(reset: bool, force: bool) -> None:
     if reset:
         config.set_onboarding_version(0)
     onboarding.run_onboarding()
+
+
+@main.command(
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "help_option_names": [],
+    }
+)
+@click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
+def codex(codex_args: tuple[str, ...]) -> None:
+    """Launch an explicitly voice-attached Codex CLI session.
+
+    All arguments after ``codex`` are passed through unchanged. The activation
+    marker is inherited only by this Codex process and its lifecycle hooks, so
+    unrelated Codex sessions cannot enter the companion reply spool.
+    """
+
+    import os
+    import shutil
+    import subprocess
+
+    environment = os.environ.copy()
+    environment["TALKTOMECLAUDE_CODEX_ACTIVE"] = "1"
+    executable = shutil.which("codex")
+    if executable is None:
+        raise click.ClickException("Codex CLI was not found on PATH")
+    try:
+        completed = subprocess.run([executable, *codex_args], env=environment)
+    except OSError as exc:
+        raise click.ClickException("Codex CLI could not be launched") from exc
+    raise SystemExit(completed.returncode)
 
 
 @main.command()
@@ -575,6 +607,7 @@ def config_set(key: str, value: str) -> None:
 
     Known keys: recording-mode (always-on, push-to-talk, push-toggle),
     voice-assist (on, off), assistant-auto-submit (on, off),
+    assistant-provider (claude, codex),
     remote (user@host, or "local"/"none" to clear),
     remote-cwd (remote project path, or "home"/"none" to clear),
     barge-in (on, off), claude-permissions (off, skip, acceptEdits,
@@ -604,6 +637,11 @@ def config_set(key: str, value: str) -> None:
                 f"invalid assistant-auto-submit value {value!r}: expected on or off"
             )
         settings.set_assistant_auto_submit(value == "on")
+    elif key == "assistant-provider":
+        try:
+            settings.set_assistant_provider(value)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
     elif key == "remote":
         settings.set_remote(None if value.lower() in ("", "local", "none", "off") else value)
     elif key == "remote-cwd":
@@ -654,7 +692,7 @@ def config_set(key: str, value: str) -> None:
     else:
         raise click.ClickException(
             f"unknown setting {key!r}: expected recording-mode, voice-assist, "
-            "assistant-auto-submit, remote, "
+            "assistant-auto-submit, assistant-provider, remote, "
             "remote-cwd, barge-in, claude-permissions, wake-word, wake-phrase, "
             "wake-model, default-voice, stt-device, command-namespace-policy, "
             "or command-namespace-allowlist"
@@ -674,6 +712,8 @@ def config_get(key: str) -> None:
         click.echo("on" if settings.voice_assist_enabled() else "off")
     elif key == "assistant-auto-submit":
         click.echo("on" if settings.assistant_auto_submit_enabled() else "off")
+    elif key == "assistant-provider":
+        click.echo(settings.assistant_provider())
     elif key == "remote":
         click.echo(settings.remote() or "local")
     elif key == "remote-cwd":
@@ -699,7 +739,7 @@ def config_get(key: str) -> None:
     else:
         raise click.ClickException(
             f"unknown setting {key!r}: expected recording-mode, voice-assist, "
-            "assistant-auto-submit, remote, "
+            "assistant-auto-submit, assistant-provider, remote, "
             "remote-cwd, barge-in, claude-permissions, wake-word, wake-phrase, "
             "wake-model, default-voice, stt-device, command-namespace-policy, "
             "or command-namespace-allowlist"
@@ -725,7 +765,7 @@ def assist(state: str) -> None:
 
 @main.group()
 def hook() -> None:
-    """Entry points invoked by the Claude Code plugin hooks."""
+    """Entry points invoked by supported assistant lifecycle hooks."""
 
 
 @hook.command("install")
@@ -734,16 +774,31 @@ def hook() -> None:
     "settings_path",
     type=click.Path(dir_okay=False, path_type=Path),
     default=None,
-    help="Claude settings JSON path (defaults to ~/.claude/settings.json).",
+    help="Hook JSON path (defaults to the selected provider's user hook file).",
 )
-def hook_install(settings_path: Path | None) -> None:
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "codex"]),
+    default="claude",
+    show_default=True,
+)
+def hook_install(settings_path: Path | None, provider: str) -> None:
     """Install the owned durable Stop hook without replacing other hooks."""
 
-    from talktomeclaude.assistant.hooks import ClaudeHookManager, HookSettingsError
+    from talktomeclaude.assistant.hooks import (
+        ClaudeHookManager,
+        CodexHookManager,
+        HookSettingsError,
+    )
 
-    target = settings_path or (Path.home() / ".claude" / "settings.json")
+    target = settings_path or (
+        Path.home() / ".claude" / "settings.json"
+        if provider == "claude"
+        else Path.home() / ".codex" / "hooks.json"
+    )
+    manager = ClaudeHookManager(target) if provider == "claude" else CodexHookManager(target)
     try:
-        inspection = ClaudeHookManager(target).install()
+        inspection = manager.install()
     except HookSettingsError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"companion Stop hook {inspection.status.value}")
@@ -756,26 +811,59 @@ def hook_install(settings_path: Path | None) -> None:
     type=click.Path(dir_okay=False, path_type=Path),
     default=None,
 )
-def hook_status(settings_path: Path | None) -> None:
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "codex"]),
+    default="claude",
+    show_default=True,
+)
+def hook_status(settings_path: Path | None, provider: str) -> None:
     """Report only this companion's owned Stop-hook status."""
 
-    from talktomeclaude.assistant.hooks import ClaudeHookManager, HookSettingsError
+    from talktomeclaude.assistant.hooks import (
+        ClaudeHookManager,
+        CodexHookManager,
+        HookSettingsError,
+    )
 
-    target = settings_path or (Path.home() / ".claude" / "settings.json")
+    target = settings_path or (
+        Path.home() / ".claude" / "settings.json"
+        if provider == "claude"
+        else Path.home() / ".codex" / "hooks.json"
+    )
+    manager = ClaudeHookManager(target) if provider == "claude" else CodexHookManager(target)
     try:
-        inspection = ClaudeHookManager(target).inspect()
+        inspection = manager.inspect()
     except HookSettingsError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(inspection.status.value)
 
 
 @hook.command("stream", hidden=True)
-def hook_stream() -> None:
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "codex"]),
+    default="claude",
+    hidden=True,
+)
+def hook_stream(provider: str) -> None:
     """Run the durable reply stream with this console script's Python."""
 
     from talktomeclaude.reply.remote import main as run_remote_stream
 
-    raise SystemExit(run_remote_stream(["stream"]))
+    from talktomeclaude import config as settings
+
+    if provider == "claude":
+        raise SystemExit(run_remote_stream(["stream"]))
+    raise SystemExit(
+        run_remote_stream(
+            [
+                "stream",
+                "--spool-root",
+                str(settings.config_dir() / "reply-spool-codex"),
+            ]
+        )
+    )
 
 
 @hook.command()
@@ -786,12 +874,23 @@ def hook_stream() -> None:
 )
 @click.option("--transport", is_flag=True, hidden=True)
 @click.option("--owner-marker", hidden=True)
-def stop(dry_run: bool, transport: bool, owner_marker: str | None) -> None:
-    """Handle a Stop event: speak Claude's final reply.
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "codex"]),
+    default="claude",
+    hidden=True,
+)
+def stop(
+    dry_run: bool,
+    transport: bool,
+    owner_marker: str | None,
+    provider: str,
+) -> None:
+    """Handle a Stop event from a supported assistant CLI.
 
     Reads the hook event JSON from stdin and speaks the dialogue of
     last_assistant_message through the local TTS voice. Honors the
-    voice-assist mute switch and never blocks Claude Code — every
+    voice-assist mute switch and never blocks the assistant CLI — every
     outcome exits 0.
     """
     import os
@@ -807,26 +906,60 @@ def stop(dry_run: bool, transport: bool, owner_marker: str | None) -> None:
 
     event = read_stop_event(sys.stdin)
     if transport:
-        from talktomeclaude.assistant import OWNED_HOOK_MARKER
+        from talktomeclaude.assistant import (
+            CODEX_OWNED_HOOK_MARKER,
+            OWNED_HOOK_MARKER,
+        )
 
-        if event is not None and owner_marker == OWNED_HOOK_MARKER:
+        expected_marker = (
+            OWNED_HOOK_MARKER
+            if provider == "claude"
+            else CODEX_OWNED_HOOK_MARKER
+        )
+        active = provider == "claude" or os.environ.get(
+            "TALKTOMECLAUDE_CODEX_ACTIVE"
+        ) == "1"
+        if event is not None and owner_marker == expected_marker and active:
             try:
-                transport_result = transport_stop_event(event, environment=os.environ)
-                if transport_result is None:
-                    record_transport_fault(
-                        "invalid_stop_event", environment=os.environ
+                if provider == "claude":
+                    transport_result = transport_stop_event(
+                        event, environment=os.environ
                     )
-                elif transport_result.code.value not in {
-                    "accepted",
-                    "suppressed_role",
-                    "suppressed_session",
-                    "suppressed_correlation",
-                }:
-                    record_transport_fault(
-                        transport_result.code.value, environment=os.environ
+                    if transport_result is None:
+                        record_transport_fault(
+                            "invalid_stop_event", environment=os.environ
+                        )
+                    elif transport_result.code.value not in {
+                        "accepted",
+                        "suppressed_role",
+                        "suppressed_session",
+                        "suppressed_correlation",
+                    }:
+                        record_transport_fault(
+                            transport_result.code.value, environment=os.environ
+                        )
+                else:
+                    from talktomeclaude.assistant.codex import (
+                        CodexStopPayloadError,
+                        CodexStopTransportError,
+                        transport_stop_event as transport_codex_stop_event,
                     )
+
+                    try:
+                        transport_codex_stop_event(
+                            event,
+                            spool_root=(
+                                Path(os.environ["TALKTOMECLAUDE_REPLY_SPOOL"])
+                                if os.environ.get("TALKTOMECLAUDE_REPLY_SPOOL")
+                                else config.config_dir() / "reply-spool-codex"
+                            ),
+                        )
+                    except CodexStopPayloadError as exc:
+                        record_transport_fault(exc.code.value, environment=os.environ)
+                    except CodexStopTransportError as exc:
+                        record_transport_fault(exc.code.value, environment=os.environ)
             except Exception as exc:
-                # A hook must never block Claude Code.  Durable failures remain
+                # A hook must never block the assistant CLI. Durable failures remain
                 # visible through spool/transport diagnostics and replay state.
                 try:
                     record_transport_fault(

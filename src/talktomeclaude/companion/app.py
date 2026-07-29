@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import subprocess
+import shlex
 import threading
 import time
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from talktomeclaude import config
-from talktomeclaude.assistant.hooks import ClaudeHookManager, HookSettingsError
+from talktomeclaude.assistant.hooks import (
+    ClaudeHookManager,
+    CodexHookManager,
+    HookSettingsError,
+)
 from talktomeclaude.capture import (
     CaptureMode,
     CaptureService,
@@ -69,6 +74,22 @@ class CompanionStartupError(RuntimeError):
 _REMOTE_REPLY_COMMAND = ("talktomeclaude", "hook", "stream")
 
 
+def _remote_reply_command(provider: str) -> tuple[str, ...]:
+    if provider == "claude":
+        return _REMOTE_REPLY_COMMAND
+    if provider == "codex":
+        return (*_REMOTE_REPLY_COMMAND, "--provider", "codex")
+    raise ValueError(f"unsupported assistant provider {provider!r}")
+
+
+def _reply_spool_path(root: Path, provider: str) -> Path:
+    if provider == "claude":
+        return root / "reply-spool"
+    if provider == "codex":
+        return root / "reply-spool-codex"
+    raise ValueError(f"unsupported assistant provider {provider!r}")
+
+
 def _safe_stt_status(message: str) -> str:
     """Reduce third-party status prose to a content-free capability code."""
 
@@ -88,12 +109,26 @@ def _safe_stt_status(message: str) -> str:
 def ensure_companion_hook(
     remote: str | None,
     *,
+    provider: str = "claude",
+    remote_cwd: str | None = None,
     local_settings_path: str | Path | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
-    """Idempotently install only this product's owned Claude Stop hook."""
+    """Idempotently install only the selected provider's owned Stop hook."""
+
+    if provider not in config.ASSISTANT_PROVIDERS:
+        raise CompanionStartupError(f"unsupported assistant provider {provider!r}")
 
     if remote:
+        remote_install = ["talktomeclaude", "hook", "install"]
+        if provider == "codex":
+            if not remote_cwd:
+                raise CompanionStartupError(
+                    "remote Codex companion mode requires a configured remote-cwd"
+                )
+            remote_install.extend(["--provider", "codex"])
+            hooks_path = PurePosixPath(remote_cwd) / ".codex" / "hooks.json"
+            remote_install.extend(["--settings", str(hooks_path)])
         command = [
             "ssh",
             "-T",
@@ -103,7 +138,7 @@ def ensure_companion_hook(
             "ConnectTimeout=10",
             "--",
             remote,
-            "talktomeclaude hook install",
+            shlex.join(remote_install),
         ]
         try:
             result = runner(
@@ -116,21 +151,35 @@ def ensure_companion_hook(
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            raise CompanionStartupError("remote Claude Stop hook installation failed") from exc
+            raise CompanionStartupError(
+                f"remote {provider.title()} Stop hook installation failed"
+            ) from exc
         if result.returncode != 0:
             raise CompanionStartupError(
-                "remote Claude Stop hook is unavailable; install TalkToMeClaude on the remote"
+                f"remote {provider.title()} Stop hook is unavailable; "
+                "install TalkToMeClaude on the remote"
             )
         return
     target = (
         Path(local_settings_path)
         if local_settings_path is not None
-        else Path.home() / ".claude" / "settings.json"
+        else (
+            Path.home() / ".claude" / "settings.json"
+            if provider == "claude"
+            else Path.home() / ".codex" / "hooks.json"
+        )
     )
     try:
-        ClaudeHookManager(target).install()
+        manager = (
+            ClaudeHookManager(target)
+            if provider == "claude"
+            else CodexHookManager(target)
+        )
+        manager.install()
     except HookSettingsError as exc:
-        raise CompanionStartupError("local Claude Stop hook installation failed") from exc
+        raise CompanionStartupError(
+            f"local {provider.title()} Stop hook installation failed"
+        ) from exc
 
 
 class PersistentTranscriberFactory:
@@ -190,6 +239,7 @@ class ProductionReplyInbox:
         *,
         local_spool: ReplySpool | None = None,
         remote: str | None = None,
+        remote_command: tuple[str, ...] = _REMOTE_REPLY_COMMAND,
         shutdown_deadline_seconds: float = 1.2,
     ) -> None:
         if shutdown_deadline_seconds <= 0:
@@ -197,6 +247,7 @@ class ProductionReplyInbox:
         self._receiver = receiver
         self._spool = local_spool
         self._remote = remote
+        self._remote_command = remote_command
         self._shutdown_deadline = shutdown_deadline_seconds
         self._inbox: DurableReplyInbox | None = None
         self._transport: SSHTransportOwner | None = None
@@ -238,7 +289,7 @@ class ProductionReplyInbox:
                 transport = PersistentSSHReplyTransport(
                     SSHConnectionSpec(
                         remote=self._remote,
-                        remote_command=_REMOTE_REPLY_COMMAND,
+                        remote_command=self._remote_command,
                     ),
                     self._receiver,
                     status=transport_status,
@@ -460,7 +511,12 @@ def build_headless_controller() -> CompanionController:
 
     root = config.config_dir()
     remote = config.remote()
-    ensure_companion_hook(remote)
+    provider = config.assistant_provider()
+    ensure_companion_hook(
+        remote,
+        provider=provider,
+        remote_cwd=config.remote_cwd(),
+    )
     diagnostics = DiagnosticStore(root / "companion-diagnostics.json")
     injector = TextInjector()
     capture_service = CaptureService(
@@ -498,8 +554,9 @@ def build_headless_controller() -> CompanionController:
     receiver = ReplyReceiver(root / "reply-inbox")
     inbox = ProductionReplyInbox(
         receiver,
-        local_spool=None if remote else ReplySpool(root / "reply-spool"),
+        local_spool=None if remote else ReplySpool(_reply_spool_path(root, provider)),
         remote=remote,
+        remote_command=_remote_reply_command(provider),
     )
     mode = (
         CaptureMode.HOLD_TO_TALK
@@ -528,7 +585,12 @@ def build_desktop_application() -> DesktopCompanionApplication:
 
     root = config.config_dir()
     remote = config.remote()
-    ensure_companion_hook(remote)
+    provider = config.assistant_provider()
+    ensure_companion_hook(
+        remote,
+        provider=provider,
+        remote_cwd=config.remote_cwd(),
+    )
     diagnostics = DiagnosticStore(root / "companion-diagnostics.json")
     injector = TextInjector()
     capture_service = CaptureService(
@@ -563,8 +625,9 @@ def build_desktop_application() -> DesktopCompanionApplication:
     receiver = ReplyReceiver(root / "reply-inbox")
     inbox = ProductionReplyInbox(
         receiver,
-        local_spool=None if remote else ReplySpool(root / "reply-spool"),
+        local_spool=None if remote else ReplySpool(_reply_spool_path(root, provider)),
         remote=remote,
+        remote_command=_remote_reply_command(provider),
     )
     surface_holder: dict[str, TkCompanionSurfaces] = {}
     review_holder: dict[str, Callable[[], None]] = {}
@@ -620,6 +683,9 @@ def build_desktop_application() -> DesktopCompanionApplication:
             else CaptureMode.PUSH_TOGGLE
         )
 
+    def set_assistant_provider(value: str) -> None:
+        config.set_assistant_provider(value)
+
     surface_holder["surfaces"] = TkCompanionSurfaces(
         shell.root,
         VoiceSettingsService(),
@@ -628,6 +694,8 @@ def build_desktop_application() -> DesktopCompanionApplication:
         set_auto_submit=set_auto_submit,
         get_recording_mode=config.companion_recording_mode,
         set_recording_mode=set_recording_mode,
+        get_assistant_provider=config.assistant_provider,
+        set_assistant_provider=set_assistant_provider,
     )
 
     def open_review() -> None:

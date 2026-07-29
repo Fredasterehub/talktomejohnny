@@ -297,6 +297,7 @@ def _surfaces(
     settings: dict[str, object] = {
         "auto_submit": True,
         "recording_mode": "push-toggle",
+        "assistant_provider": "claude",
     }
     surface = TkCompanionSurfaces(
         object(),
@@ -306,6 +307,10 @@ def _surfaces(
         set_auto_submit=lambda value: settings.__setitem__("auto_submit", value),
         get_recording_mode=lambda: str(settings["recording_mode"]),
         set_recording_mode=lambda value: settings.__setitem__("recording_mode", value),
+        get_assistant_provider=lambda: str(settings["assistant_provider"]),
+        set_assistant_provider=lambda value: settings.__setitem__(
+            "assistant_provider", value
+        ),
         tk_module=tk,
         file_dialogs=dialogs,
         messages=messages,
@@ -338,11 +343,26 @@ def test_settings_surface_focuses_only_when_opened_and_shows_exact_warning(
     assert ("focus", None) in surface.window.calls
     assert surface.controls["warning"].options["text"] == AUTO_SUBMIT_WARNING
     assert "Hold to talk" in surface.controls["push_to_talk"].options["text"]
+    assert "Restart required" in surface.controls["provider_restart"].options["text"]
     surface.variables["auto_submit"].set(False)
     surface.variables["recording_mode"].set("push-to-talk")
+    surface.variables["assistant_provider"].set("codex")
     surface.controls["save"].invoke()
-    assert settings == {"auto_submit": False, "recording_mode": "push-to-talk"}
+    assert settings == {
+        "auto_submit": False,
+        "recording_mode": "push-to-talk",
+        "assistant_provider": "codex",
+    }
     assert surface.window.destroyed is True
+
+
+def test_settings_surface_defaults_unknown_provider_to_claude(tmp_path: Path) -> None:
+    surfaces, _tk, _voices, _dialogs, _messages, settings = _surfaces(tmp_path)
+    settings["assistant_provider"] = "unknown"
+
+    surface = surfaces.open_settings()
+
+    assert surface.variables["assistant_provider"].get() == "claude"
 
 
 def test_voice_surface_uses_non_color_status_and_service_actions(

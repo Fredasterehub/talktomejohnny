@@ -363,7 +363,7 @@ class CompanionController:
             self._capture_control_finished(result)
             return
         details = {
-            CaptureDeliveryCode.DELIVERED: "Transcript delivered; waiting for Claude",
+            CaptureDeliveryCode.DELIVERED: "Transcript delivered; waiting for assistant",
             CaptureDeliveryCode.REVIEW_REQUIRED: "Review the transcript before delivery",
             CaptureDeliveryCode.CANCELLED: "Capture cancelled",
             CaptureDeliveryCode.STALE: "Stale capture discarded",
@@ -466,8 +466,15 @@ class CompanionController:
         with self._lock:
             changed = self._output_muted != muted
             self._output_muted = muted
+            phase = self._capture.runtime.state.phase
         if muted and self._speech is not None:
             self._speech.stop()
+        if muted and phase in {RuntimePhase.SPEAKING, RuntimePhase.PAUSED}:
+            finished = self._capture.runtime.dispatch(
+                RuntimeEvent(EventKind.SPEECH_FINISHED)
+            )
+            if not finished.accepted:
+                raise RuntimeError("runtime rejected muted speech completion")
         if self._speech is not None:
             self._speech.set_muted(muted)
         if changed and self._persist_output_muted is not None:
@@ -533,10 +540,10 @@ class CompanionController:
         state = self._capture.runtime.state
         if normalized == "disconnected" and state.phase is RuntimePhase.WAITING_FOR_CLAUDE:
             self._capture.runtime.dispatch(RuntimeEvent(EventKind.TRANSPORT_DISCONNECTED))
-            self._set_detail("Claude connection interrupted; retrying")
+            self._set_detail("Assistant connection interrupted; retrying")
         elif normalized == "connected" and state.phase is RuntimePhase.DISCONNECTED:
             self._capture.runtime.dispatch(RuntimeEvent(EventKind.TRANSPORT_RECONNECTED))
-            self._set_detail("Claude connection restored")
+            self._set_detail("Assistant connection restored")
         elif normalized:
             self._set_detail(f"Reply transport: {normalized}")
         if self._diagnostics is not None:

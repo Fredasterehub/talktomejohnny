@@ -10,12 +10,18 @@ recognition, and Chatterbox cloned voices.
   machine.
 - On Windows, the Stage A companion is an explicit opt-in. The no-argument dashboard
   remains the default until the physical release gate approves a later flip.
+- The default assistant provider remains Claude. Codex is an explicit opt-in provider
+  selected with `talktomeclaude config set assistant-provider codex` and launched
+  through `talktomeclaude codex`.
 - Claude Code may run locally or over passwordless SSH. A remote project directory is
   passed to `claude -p` through a safely quoted login shell.
 - Remote companion mode requires this same TalkToMeClaude checkout on the Claude
-  host for its owned Stop hook and `talktomeclaude hook stream` helper. It does not install
-  or run the local audio/Torch/TTS stack there. Legacy `listen` remote mode does not
-  require this helper.
+  host for its owned Stop hook and `talktomeclaude hook stream` helper. The Codex
+  provider uses its own additive Stop hook at `remote-cwd/.codex/hooks.json`, must be
+  trusted once with `/hooks` in Codex, and activates only when launched through the
+  `talktomeclaude codex` wrapper. Neither provider installs or runs the local
+  audio/Torch/TTS stack there. Legacy `listen` remote mode does not require this
+  helper.
 - Source installs are editable. A code-only update does not require rebuilding the
   virtual environment, but the running `talktomeclaude` process must be restarted.
 - Reinstall dependencies only when `pyproject.toml`, an optional engine, or a pinned
@@ -44,6 +50,32 @@ python -c "import talktomeclaude; print(talktomeclaude.__file__)"
    do not recreate a working venv without a concrete reason.
 6. Run the verification sequence below on Windows and Linux.
 7. Push the feature branch only after both worktrees are clean and green.
+
+## Assistant provider switching
+
+Keep the provider default on Claude unless you are explicitly validating the Codex
+path. Roll back by setting Claude again and restarting the companion:
+
+```powershell
+talktomeclaude config set assistant-provider claude
+```
+
+Use the Codex wrapper only for attached sessions that should stream through the
+project-scoped Codex hook:
+
+```powershell
+talktomeclaude config set assistant-provider codex
+talktomeclaude companion
+```
+
+Then, from the configured project on the assistant host, launch the attached CLI:
+
+```text
+talktomeclaude codex
+```
+
+If the remote Codex hook has not been trusted yet, open Codex and accept the project
+hook via `/hooks` before relying on streamed replies.
 
 ## Windows Companion Stage A
 

@@ -11,6 +11,7 @@ from talktomeclaude.companion.app import (
     DesktopCompanionApplication,
     PersistentTranscriberFactory,
     _REMOTE_REPLY_COMMAND,
+    _remote_reply_command,
     _route_hotkey_press,
     _route_hotkey_release,
     _safe_stt_status,
@@ -255,10 +256,69 @@ class HookBootstrapTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["dev@example", "talktomeclaude hook install"])
         self.assertEqual(runner.call_args.kwargs["timeout"], 15)
 
+    def test_local_codex_hook_install_is_idempotent_and_owned(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            settings = Path(temporary) / "hooks.json"
+            ensure_companion_hook(
+                None,
+                provider="codex",
+                local_settings_path=settings,
+            )
+            ensure_companion_hook(
+                None,
+                provider="codex",
+                local_settings_path=settings,
+            )
+            wire = settings.read_text(encoding="utf-8")
+        self.assertEqual(
+            wire.count("talktomeclaude.windows-companion.codex.v1"), 1
+        )
+
+    def test_remote_codex_hook_is_scoped_to_configured_project(self) -> None:
+        completed = mock.Mock(returncode=0)
+        runner = mock.Mock(return_value=completed)
+
+        ensure_companion_hook(
+            "dev@example",
+            provider="codex",
+            remote_cwd="/DEV/ghostundo",
+            runner=runner,
+        )
+
+        command = runner.call_args.args[0]
+        self.assertEqual(command[:3], ["ssh", "-T", "-o"])
+        self.assertEqual(command[-2], "dev@example")
+        self.assertEqual(
+            command[-1],
+            "talktomeclaude hook install --provider codex --settings "
+            "/DEV/ghostundo/.codex/hooks.json",
+        )
+        self.assertEqual(runner.call_args.kwargs["timeout"], 15)
+
+    def test_remote_codex_hook_requires_a_configured_project(self) -> None:
+        runner = mock.Mock()
+
+        with self.assertRaisesRegex(CompanionStartupError, "remote-cwd"):
+            ensure_companion_hook(
+                "dev@example",
+                provider="codex",
+                remote_cwd=None,
+                runner=runner,
+            )
+
+        runner.assert_not_called()
+
     def test_remote_reply_stream_uses_the_installed_console_interpreter(self) -> None:
         self.assertEqual(
             _REMOTE_REPLY_COMMAND,
             ("talktomeclaude", "hook", "stream"),
+        )
+        self.assertEqual(
+            _remote_reply_command("codex"),
+            ("talktomeclaude", "hook", "stream", "--provider", "codex"),
         )
 
 

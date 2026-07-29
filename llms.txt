@@ -5,7 +5,7 @@
 ## METADATA
 ```yaml
 name: talktomeclaude
-description: Local-first voice medium for Claude Code. You speak (local Whisper-class STT); Claude answers back in a real voice speaking ONLY its dialogue (never tool calls, code, or logs) via a Claude Code plugin Stop hook.
+description: Local-first voice medium for Claude Code and the opt-in Windows Codex CLI provider. You speak using local Whisper-class STT; authoritative assistant replies return through lifecycle Stop hooks and local speech.
 repo: https://github.com/Fredasterehub/talktomeclaude
 license: MIT
 version: 0.0.1
@@ -28,6 +28,7 @@ system_packages:
   windows: []                   # see GOTCHAS for the Stop-hook / Git Bash note
 depends_on_optional:
   claude_code: "required only for the voice loop + Stop-hook plugin; the CLI works standalone"
+  codex_cli: "required only for the opt-in Windows companion Codex provider"
 ```
 
 ## INSTALL_WINDOWS
@@ -96,6 +97,7 @@ remote_ssh:
 ```yaml
 commands:
   companion: 'talktomeclaude companion'              # Windows Stage A desktop companion (Tk + Win32)
+  codex_attached: 'talktomeclaude codex'             # launch only the Codex session intentionally attached to the companion
   companion_headless: 'talktomeclaude companion --headless'  # production-backed recovery surface
   legacy_tui: 'talktomeclaude tui'                   # explicit compatibility dashboard
   speak:      'talktomeclaude speak "text" [--out file.wav] [--voice NAME]'
@@ -103,8 +105,8 @@ commands:
   transcribe: 'talktomeclaude transcribe AUDIO [--device auto|cuda|cpu] [--show-tier]'
   filter:     'talktomeclaude filter transcript.jsonl'   # prints only spoken dialogue (never code/tools)
   voices:     'talktomeclaude voices [--download]'       # list voices + licenses; --download pre-fetches all
-  config_set: 'talktomeclaude config set recording-mode|voice-assist|remote|remote-cwd VALUE'
-  config_get: 'talktomeclaude config get recording-mode|voice-assist|remote|remote-cwd'
+  config_set: 'talktomeclaude config set recording-mode|voice-assist|assistant-provider|remote|remote-cwd VALUE'
+  config_get: 'talktomeclaude config get recording-mode|voice-assist|assistant-provider|remote|remote-cwd'
   assist:     'talktomeclaude assist on|off|status'
 default_recording_mode: push-to-talk
 windows_companion_recording_mode: push-toggle
@@ -121,7 +123,7 @@ recovery:
   - talktomeclaude companion --headless
   - talktomeclaude tui
 repository_guide: https://github.com/Fredasterehub/talktomeclaude/blob/main/docs/WINDOWS_COMPANION.md
-remote_helper: "Remote companion mode requires TalkToMeClaude on the Claude host and its console script on PATH for `hook install` and `hook stream`; the older listen topology does not. The remote still needs no audio stack."
+remote_helper: "Remote companion mode requires TalkToMeClaude on the selected assistant host and its console script on PATH for `hook install` and `hook stream`; the older listen topology does not. Codex uses a project-scoped additive Stop hook, explicit `talktomeclaude codex` activation, and a separate reply spool. The remote still needs no audio stack."
 ```
 
 ## VOICES

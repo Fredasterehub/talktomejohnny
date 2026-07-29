@@ -42,7 +42,7 @@ recording modes. One local command.
 ## What it does
 
 - **Launch dashboard** — run `talktomeclaude` with no arguments for a live signal view, conversation status, recording controls, and a remote project picker.
-- **Opt-in Windows companion** — Stage A adds an explicit `talktomeclaude companion` desktop path beside your ordinary Claude Code terminal; the existing no-argument dashboard remains the default.
+- **Opt-in Windows companion** — Stage A adds an explicit `talktomeclaude companion` desktop path beside your ordinary Claude Code or Codex CLI terminal; the existing no-argument dashboard remains the default.
 - **Hear you** — local speech-to-text, Whisper-class (faster-whisper). Your voice never leaves the machine.
 - **Answer back** — speaks Claude's actual dialogue in a real voice, and *only* the dialogue. Tool calls, fenced code, and thinking are stripped out.
 - **Ride Claude Code** — a plugin Stop hook speaks each reply automatically. Async, non-blocking, fails silent.
@@ -61,6 +61,7 @@ recording modes. One local command.
 - **A fast, lightweight clone** — the voice models are *not* committed to the repo. They download once, on your first `speak` (~250 MB for all three), and cache under `~/.cache/talktomeclaude/voices`. Pre-fetch them any time — e.g. before going offline — with `talktomeclaude voices --download`.
 - **A one-time model download on first transcription** — the local Whisper model pulls itself the first time you use `transcribe`/`listen`: **~486 MB** on the CPU tier (`small.en`), or **~3 GB** on the NVIDIA/CUDA tier (`large-v3`). It caches under `~/.cache/talktomeclaude/` and never downloads again.
 - **[Claude Code](https://code.claude.com)** on your PATH if you want the voice loop and the Stop-hook plugin (the CLI works standalone without it).
+- **Codex CLI** on the assistant host if you opt into the Windows companion's Codex provider; Claude remains the default.
 
 The three steps that never change on any platform: **get the code → make the
 env → install it.** The rest is your OS spelling those the same three words
@@ -149,6 +150,11 @@ default **PowerShell** tab.
    auto-submit, voice, diagnostics, and recovery contract in
    repository guide,
    **[Windows Companion (Stage A)](https://github.com/Fredasterehub/talktomeclaude/blob/main/docs/WINDOWS_COMPANION.md)**.
+
+   The companion also supports an explicit Codex CLI provider. Select it in Settings
+   (or run `talktomeclaude config set assistant-provider codex`), restart the
+   companion, then launch only the attached Codex session with
+   `talktomeclaude codex`. See the guide above for remote hook trust and rollback.
 
 ---
 

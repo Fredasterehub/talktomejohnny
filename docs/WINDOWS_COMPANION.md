@@ -1,9 +1,9 @@
 # Windows Companion (Stage A)
 
 The Windows companion is an opt-in desktop path for using local microphone,
-speech recognition, and speech output alongside an ordinary Claude Code terminal.
+speech recognition, and speech output alongside a supported assistant CLI terminal.
 It supports Windows 11 only. The terminal remains the visible source of truth; the
-companion does not replace, scrape, or infer the state of Claude Code.
+companion does not replace, scrape, or infer the state of the assistant CLI.
 
 Stage A deliberately requires an explicit launch. Running `talktomeclaude` with no
 subcommand still opens the existing dashboard.
@@ -31,11 +31,35 @@ If the desktop shell cannot start, see [Recovery paths](#recovery-paths).
 
 When Claude Code runs over the configured SSH remote, install this same
 TalkToMeClaude checkout there as a code-only helper. The companion idempotently
-installs its owned Claude Stop hook and runs
-`talktomeclaude hook stream` over passwordless SSH. The remote
-needs no microphone, speaker, Torch, TTS engine, or voice/model cache. This remote
-helper requirement applies to the companion path; the older `listen` command can
-still drive a remote that has only Claude Code.
+installs its owned Claude Stop hook or its owned Codex Stop hook, then runs the
+matching `talktomeclaude hook stream` path over passwordless SSH. The remote needs
+no microphone, speaker, Torch, TTS engine, or voice/model cache. The Codex path is
+opt-in and only activates when you launch attached sessions through
+`talktomeclaude codex`; ordinary `codex` sessions stay out of scope unless you
+explicitly wrap them. The remote helper requirement applies to the companion path;
+the older `listen` command can still drive a remote that has only Claude Code.
+
+## Assistant provider
+
+The default assistant provider remains Claude. To use the authorized Codex CLI
+provider, select Codex, restart the companion, then launch the remote Codex session
+through the attachment wrapper from the configured project:
+
+```powershell
+talktomeclaude config set assistant-provider codex
+talktomeclaude companion
+talktomeclaude codex
+```
+
+The Codex Stop hook is additive and project-scoped under
+`remote-cwd/.codex/hooks.json`. Trust that hook once from Codex with `/hooks`
+before relying on streamed replies. To roll back, set the provider back to Claude
+and relaunch the normal path:
+
+```powershell
+talktomeclaude config set assistant-provider claude
+talktomeclaude companion
+```
 
 ## Choose the delivery terminal
 
@@ -158,6 +182,5 @@ running Python processes do not reload edited modules.
 ## Stage boundary
 
 Do not treat the Windows companion as the no-argument default until the full automated
-and physical Windows/RTX/remote-Claude gates are complete. macOS and Linux companions,
-Codex integration, and remembered terminal targets across turns are not part of this
-release.
+and physical Windows/RTX/remote-assistant gates are complete. macOS and Linux
+companions and remembered terminal targets across turns are not part of this release.

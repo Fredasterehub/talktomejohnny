@@ -13,6 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
+from talktomeclaude import config
 from talktomeclaude.companion.capture_delivery import TranscriptReview
 from talktomeclaude.companion.settings import (
     AUTO_SUBMIT_WARNING,
@@ -222,6 +223,8 @@ class TkCompanionSurfaces:
         set_auto_submit: Callable[[bool], object],
         get_recording_mode: Callable[[], str],
         set_recording_mode: Callable[[str], object],
+        get_assistant_provider: Callable[[], str],
+        set_assistant_provider: Callable[[str], object],
         tk_module: Any | None = None,
         file_dialogs: Any | None = None,
         messages: Any | None = None,
@@ -244,6 +247,8 @@ class TkCompanionSurfaces:
         self._set_auto_submit = set_auto_submit
         self._get_recording_mode = get_recording_mode
         self._set_recording_mode = set_recording_mode
+        self._get_assistant_provider = get_assistant_provider
+        self._set_assistant_provider = set_assistant_provider
         self._tk = tk_module or importlib.import_module("tkinter")
         self._file_dialogs = file_dialogs or importlib.import_module(
             "tkinter.filedialog"
@@ -277,7 +282,7 @@ class TkCompanionSurfaces:
         return stopped
 
     def open_settings(self) -> TkSurfaceWindow:
-        surface = self._new_surface("TalkToMeClaude settings", "560x310")
+        surface = self._new_surface("TalkToMeClaude settings", "560x400")
         window = surface.window
         frame = self._tk.Frame(window, padx=12, pady=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -289,8 +294,20 @@ class TkCompanionSurfaces:
             if current_mode in {"push-toggle", "push-to-talk"}
             else "push-toggle"
         )
+        current_provider = self._get_assistant_provider()
+        assistant_provider = self._tk.StringVar(
+            value=(
+                current_provider
+                if current_provider in config.ASSISTANT_PROVIDERS
+                else config.DEFAULT_ASSISTANT_PROVIDER
+            )
+        )
         surface.variables.update(
-            {"auto_submit": auto_submit, "recording_mode": recording_mode}
+            {
+                "auto_submit": auto_submit,
+                "recording_mode": recording_mode,
+                "assistant_provider": assistant_provider,
+            }
         )
         auto_toggle = self._tk.Checkbutton(
             frame,
@@ -323,26 +340,58 @@ class TkCompanionSurfaces:
             value="push-to-talk",
         )
         hold.grid(row=4, column=0, columnspan=2, sticky="w")
+        self._tk.Label(frame, text="Assistant provider", anchor="w").grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        )
+        claude = self._tk.Radiobutton(
+            frame,
+            text="Claude CLI",
+            variable=assistant_provider,
+            value="claude",
+        )
+        claude.grid(row=6, column=0, columnspan=2, sticky="w")
+        codex = self._tk.Radiobutton(
+            frame,
+            text="Codex CLI",
+            variable=assistant_provider,
+            value="codex",
+        )
+        codex.grid(row=7, column=0, columnspan=2, sticky="w")
+        restart = self._tk.Label(
+            frame,
+            text=(
+                "Restart required after changing assistant provider. "
+                "The current companion session will keep its existing connection."
+            ),
+            justify="left",
+            anchor="w",
+            wraplength=520,
+        )
+        restart.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         def save() -> None:
             try:
                 self._set_recording_mode(str(recording_mode.get()))
                 self._set_auto_submit(bool(auto_submit.get()))
+                self._set_assistant_provider(str(assistant_provider.get()))
             except Exception as exc:
                 self._show_error("Settings were not saved", exc, parent=window)
                 return
             window.destroy()
 
         save_button = self._tk.Button(frame, text="Save", command=save)
-        save_button.grid(row=5, column=0, sticky="e", pady=(16, 0))
+        save_button.grid(row=9, column=0, sticky="e", pady=(16, 0))
         cancel = self._tk.Button(frame, text="Cancel", command=window.destroy)
-        cancel.grid(row=5, column=1, sticky="w", pady=(16, 0))
+        cancel.grid(row=9, column=1, sticky="w", pady=(16, 0))
         surface.controls.update(
             {
                 "auto_submit": auto_toggle,
                 "warning": warning,
                 "push_toggle": toggle,
                 "push_to_talk": hold,
+                "claude_provider": claude,
+                "codex_provider": codex,
+                "provider_restart": restart,
                 "save": save_button,
                 "cancel": cancel,
             }
