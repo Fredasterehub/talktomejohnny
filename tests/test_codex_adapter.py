@@ -189,6 +189,7 @@ class CodexCliIntegrationTests(unittest.TestCase):
 
     def test_hook_install_uses_codex_hooks_json_additively(self) -> None:
         hooks = self.root / "hooks.json"
+        executable = str((self.root / "bin" / "talktomejohnny").resolve())
         hooks.write_text(
             json.dumps(
                 {
@@ -209,9 +210,7 @@ class CodexCliIntegrationTests(unittest.TestCase):
                 **os.environ,
                 "HOME": str(self.root / "home"),
                 "USERPROFILE": str(self.root / "home"),
-                "TALKTOMEJOHNNY_HOOK_EXECUTABLE": str(
-                    (self.root / "bin" / "talktomejohnny").resolve()
-                ),
+                "TALKTOMEJOHNNY_HOOK_EXECUTABLE": executable,
             },
         )
 
@@ -220,10 +219,14 @@ class CodexCliIntegrationTests(unittest.TestCase):
         document = json.loads(hooks.read_text(encoding="utf-8"))
         self.assertEqual(document["hooks"]["Stop"][0]["hooks"][0]["command"], "other")
         command = document["hooks"]["Stop"][1]["hooks"][0]["command"]
-        self.assertTrue(command.startswith("powershell.exe -NoProfile"))
-        decoded = base64.b64decode(command.rsplit(" ", 1)[1]).decode("utf-16-le")
-        self.assertIn("'hook' 'stop' '--transport' '--provider' 'codex'", decoded)
-        self.assertIn(CODEX_OWNED_HOOK_MARKER, decoded)
+        if ":" in executable[:3] or "\\" in executable:
+            self.assertTrue(command.startswith("powershell.exe -NoProfile"))
+            decoded = base64.b64decode(command.rsplit(" ", 1)[1]).decode("utf-16-le")
+            self.assertIn("'hook' 'stop' '--transport' '--provider' 'codex'", decoded)
+            self.assertIn(CODEX_OWNED_HOOK_MARKER, decoded)
+        else:
+            self.assertTrue(command.startswith(f"{executable} hook stop --transport"))
+            self.assertIn(CODEX_OWNED_HOOK_MARKER, command)
         self.assertEqual(len(document["hooks"]["UserPromptSubmit"]), 1)
         self.assertEqual(len(document["hooks"]["SessionEnd"]), 1)
         self.assertTrue(
