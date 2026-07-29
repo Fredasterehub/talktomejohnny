@@ -171,9 +171,12 @@ class StateReducerTests(unittest.TestCase):
                 self.assertEqual(RuntimePhase.IDLE, cancelled.current.phase)
                 self.assertEqual(12, cancelled.current.generation)
 
-    def test_starting_a_new_turn_interrupts_plan_or_speech_and_advances_generation(self) -> None:
+    def test_starting_a_new_turn_interrupts_wait_plan_or_speech_and_advances_generation(
+        self,
+    ) -> None:
         for phase in (
             RuntimePhase.AWAITING_CONFIRMATION,
+            RuntimePhase.WAITING_FOR_CLAUDE,
             RuntimePhase.PLANNING,
             RuntimePhase.SPEAKING,
             RuntimePhase.PAUSED,

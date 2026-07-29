@@ -63,6 +63,7 @@ _TRANSITIONS: dict[tuple[RuntimePhase, EventKind], RuntimePhase] = {
 _INTERRUPTIBLE_FOR_RECORDING = {
     RuntimePhase.IDLE,
     RuntimePhase.AWAITING_CONFIRMATION,
+    RuntimePhase.WAITING_FOR_CLAUDE,
     RuntimePhase.PLANNING,
     RuntimePhase.SPEAKING,
     RuntimePhase.PAUSED,
