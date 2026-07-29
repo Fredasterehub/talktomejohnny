@@ -44,7 +44,7 @@ class TalkToMeAppTests(_ConfigIsolation):
             self.assertIsNotNone(app.query_one("#header"))
             self.assertIsNotNone(app.query_one("#dialogue", tui.RichLog))
             band = app.query_one("#band", tui.HeaderBand)
-            self.assertIn("TALK TO ME, CLAUDE", band.render().plain)
+            self.assertIn("TALK TO ME, JOHNNY", band.render().plain)
 
     async def test_wake_chip_present(self) -> None:
         app = TalkToMeApp(lambda _text: None)
@@ -106,7 +106,7 @@ class TalkToMeAppTests(_ConfigIsolation):
             await pilot.pause()
             self.assertTrue(app.screen.has_class("-compact"))
             band = app.query_one("#band", tui.HeaderBand)
-            self.assertIn("TALK TO ME, CLAUDE", band.render().plain)
+            self.assertIn("TALK TO ME, JOHNNY", band.render().plain)
 
     async def test_mode_key_cycles_and_persists(self) -> None:
         from talktomeclaude import config

@@ -61,9 +61,14 @@ def _quoted_command(executable: str, *arguments: str) -> str:
     if not isinstance(executable, str) or not executable.strip():
         raise ValueError("hook executable must be a non-empty string")
     argv = [executable, *arguments]
+    windows_style = (
+        ":" in executable[:3]
+        or "\\" in executable
+        or executable.casefold().endswith(".exe")
+    )
     return (
         subprocess.list2cmdline(argv)
-        if os.name == "nt"
+        if os.name == "nt" or windows_style
         else shlex.join(argv)
     )
 

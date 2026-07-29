@@ -12,7 +12,6 @@ from click.testing import CliRunner
 
 from talktomeclaude.assistant import (
     CODEX_OWNED_HOOK_MARKER,
-    CODEX_STOP_HOOK_COMMAND,
     SessionAttachmentRegistry,
 )
 
@@ -209,16 +208,16 @@ class CodexCliIntegrationTests(unittest.TestCase):
                 **os.environ,
                 "HOME": str(self.root / "home"),
                 "USERPROFILE": str(self.root / "home"),
+                "TALKTOMEJOHNNY_HOOK_EXECUTABLE": "/usr/local/bin/talktomejohnny",
             },
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
         document = json.loads(hooks.read_text(encoding="utf-8"))
         self.assertEqual(document["hooks"]["Stop"][0]["hooks"][0]["command"], "other")
-        self.assertEqual(
-            document["hooks"]["Stop"][1]["hooks"][0]["command"],
-            CODEX_STOP_HOOK_COMMAND,
-        )
+        command = document["hooks"]["Stop"][1]["hooks"][0]["command"]
+        self.assertIn("hook stop --transport --provider codex", command)
+        self.assertIn(CODEX_OWNED_HOOK_MARKER, command)
         self.assertEqual(len(document["hooks"]["UserPromptSubmit"]), 1)
         self.assertEqual(len(document["hooks"]["SessionEnd"]), 1)
         self.assertTrue(
