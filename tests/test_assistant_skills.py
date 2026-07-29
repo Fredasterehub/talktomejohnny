@@ -67,6 +67,33 @@ class AssistantSkillInstallerTests(unittest.TestCase):
             SkillStatus.INSTALLED,
         )
 
+    def test_install_migrates_exact_markerless_generated_skill(self) -> None:
+        legacy = (
+            "# TalkToMeJohnny local control\n\n"
+            "This command is intercepted locally by TalkToMeJohnny before the assistant sees it.\n\n"
+            "If you are reading this, the local TalkToMeJohnny session-control hook is missing,\n"
+            "untrusted, or offline.\n\n"
+            "Do not perform any tool actions.\n"
+            "Reply with exactly one short sentence:\n"
+            "TalkToMeJohnny local control is unavailable; run `talktomejohnny hook install` and trust the installed hooks.\n"
+        )
+        paths = (
+            self.home / ".agents" / "skills" / "talktomejohnny" / "SKILL.md",
+            self.home / ".codex" / "skills" / "talktomejohnny" / "SKILL.md",
+        )
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(legacy, encoding="utf-8", newline="\n")
+
+        self.installer.install("codex")
+
+        for path in paths:
+            migrated = path.read_text(encoding="utf-8")
+            self.assertIn("<!-- talktomejohnny.control-skill.v1 -->", migrated)
+            self.assertIn(
+                "talktomejohnny hook install --provider codex", migrated
+            )
+
     def test_conflicting_user_skill_fails_closed_without_overwrite(self) -> None:
         path = self.home / ".claude" / "skills" / "talktomejohnny" / "SKILL.md"
         path.parent.mkdir(parents=True, exist_ok=True)

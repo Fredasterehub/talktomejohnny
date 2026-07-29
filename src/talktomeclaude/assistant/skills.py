@@ -11,6 +11,15 @@ from pathlib import Path
 from talktomeclaude.assistant.attachment import ProviderName
 
 _SKILL_MARKER = "<!-- talktomejohnny.control-skill.v1 -->"
+_LEGACY_GENERATED_SKILL = (
+    "# TalkToMeJohnny local control\n\n"
+    "This command is intercepted locally by TalkToMeJohnny before the assistant sees it.\n\n"
+    "If you are reading this, the local TalkToMeJohnny session-control hook is missing,\n"
+    "untrusted, or offline.\n\n"
+    "Do not perform any tool actions.\n"
+    "Reply with exactly one short sentence:\n"
+    "TalkToMeJohnny local control is unavailable; run `talktomejohnny hook install` and trust the installed hooks.\n"
+)
 _SUPPORTED_PROVIDERS = frozenset({"claude", "codex", "both"})
 _COMMAND_PREFIX = {"claude": "/", "codex": "$"}
 
@@ -118,7 +127,11 @@ def _skill_content(provider: ProviderName) -> str:
 
 
 def _is_owned(existing: str, expected: str) -> bool:
-    return existing == expected or _SKILL_MARKER in existing
+    return (
+        existing == expected
+        or existing == _LEGACY_GENERATED_SKILL
+        or _SKILL_MARKER in existing
+    )
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

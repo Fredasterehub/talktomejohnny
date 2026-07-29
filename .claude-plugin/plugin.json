@@ -1,6 +1,6 @@
 {
   "name": "talktomejohnny",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TalkToMeJohnny's backward-compatible Claude Code plugin surface. The local-first voice companion also supports Codex CLI through user lifecycle hooks.",
   "author": {
     "name": "TalkToMeJohnny contributors"
