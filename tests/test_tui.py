@@ -512,19 +512,23 @@ class RemoteProjectTests(unittest.TestCase):
     def test_project_discovery_returns_sorted_unique_paths(self) -> None:
         completed = SimpleNamespace(
             returncode=0,
-            stdout="/DEV/zeta\n/DEV/Alpha\n/DEV/zeta\n",
+            stdout="/srv/projects/zeta\n/srv/projects/Alpha\n/srv/projects/zeta\n",
             stderr="",
         )
 
         with mock.patch.object(tui, "_ssh_base", return_value=["ssh", "dev@example"]), mock.patch.object(
             tui, "_remote_shell_command", side_effect=lambda command: command
         ), mock.patch.object(tui.subprocess, "run", return_value=completed) as run:
-            projects = tui.discover_remote_projects("dev@example", "/DEV")
+            projects = tui.discover_remote_projects(
+                "user@example-host", "/srv/projects"
+            )
 
-        self.assertEqual(projects, ["/DEV/Alpha", "/DEV/zeta"])
+        self.assertEqual(
+            projects, ["/srv/projects/Alpha", "/srv/projects/zeta"]
+        )
         command = run.call_args.args[0]
         self.assertEqual(command[:2], ["ssh", "dev@example"])
-        self.assertIn("find -- /DEV", command[-1])
+        self.assertIn("find -- /srv/projects", command[-1])
         self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
         self.assertEqual(run.call_args.kwargs["errors"], "replace")
 
@@ -541,12 +545,16 @@ class RemoteProjectTests(unittest.TestCase):
         with mock.patch.object(tui, "_ssh_base", return_value=["ssh", "dev@example"]), mock.patch.object(
             tui, "_remote_shell_command", side_effect=lambda command: command
         ), mock.patch.object(tui.subprocess, "run", return_value=completed) as run:
-            self.assertTrue(tui.remote_directory_exists("dev@example", "/DEV/ghostundo"))
+            self.assertTrue(
+                tui.remote_directory_exists(
+                    "user@example-host", "/srv/projects/example-project"
+                )
+            )
 
         inner = run.call_args.args[0][-1]
         self.assertIn("test -d ", inner)
         self.assertNotIn("-d -- ", inner)
-        self.assertIn("/DEV/ghostundo", inner)
+        self.assertIn("/srv/projects/example-project", inner)
 
 
 class LiveSignalTests(unittest.TestCase):

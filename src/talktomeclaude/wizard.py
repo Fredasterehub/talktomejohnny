@@ -11,6 +11,7 @@ microphone and is kept separate because it needs audio hardware.
 import wave
 from pathlib import Path
 
+from talktomeclaude import config
 from talktomeclaude import registry
 from talktomeclaude.clone import clone_available
 
@@ -23,7 +24,7 @@ class WizardError(RuntimeError):
 
 
 def samples_dir() -> Path:
-    return Path.home() / ".cache" / "talktomeclaude" / "samples"
+    return config.preferred_cache_dir("samples")
 
 
 def create_clone_voice(

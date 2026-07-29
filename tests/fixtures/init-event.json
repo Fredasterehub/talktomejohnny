@@ -1,9 +1,9 @@
 {
   "type": "system",
   "subtype": "init",
-  "session_id": "b3d8f1c2-6a94-4e7b-9c1d-5f2a7e8b4c10",
-  "cwd": "/home/dev/project",
-  "model": "claude-opus-4",
+  "session_id": "synthetic-session",
+  "cwd": "/workspace/example",
+  "model": "synthetic-model",
   "tools": ["Bash", "Read", "Edit"],
   "permissionMode": "default",
   "slash_commands": ["model", "help", "clear", "compact"],

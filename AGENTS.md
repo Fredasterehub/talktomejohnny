@@ -1,8 +1,10 @@
-# AGENTS.md — talktomeclaude
+# AGENTS.md — TalkToMeJohnny
 
 Stack: Python >=3.11. Env/deps: `uv`, project venv at `.venv`. CLI framework: `click`.
-Source layout: `src/talktomeclaude/` (package); console script `talktomeclaude` ->
-`talktomeclaude.cli:main`. Fixtures: `tests/fixtures/`.
+Primary console script: `talktomejohnny`; compatibility console script:
+`talktomeclaude`. The implementation intentionally remains under
+`src/talktomeclaude/` during the migration window, with a public
+`src/talktomejohnny/` facade. Fixtures: `tests/fixtures/`.
 
 Test command: `bash .kiln/law/check.sh` (run from project root) — exit 0 is the bar. Do not
 edit anything under `.kiln/` — it is Kiln's own control plane and evidence store, never

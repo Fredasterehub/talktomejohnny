@@ -40,9 +40,10 @@ jobs:
 
       - name: Smoke CLI and listen import
         run: |
+          talktomejohnny --help
+          talktomejohnny listen --help
           talktomeclaude --help
-          talktomeclaude listen --help
-          python -c "import talktomeclaude.listen; print('listen import: ok')"
+          python -c "import talktomejohnny, talktomeclaude.listen; print('primary and legacy imports: ok')"
 
       - name: Validate hook shell syntax
         if: runner.os == 'Linux'

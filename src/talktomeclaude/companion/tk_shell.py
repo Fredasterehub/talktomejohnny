@@ -158,7 +158,7 @@ class TkCompanionShell:
         self._snapshot = initial_snapshot
         self.root = self._tk.Tk()
         self.root.withdraw()
-        self.root.title("TalkToMeClaude")
+        self.root.title("TalkToMeJohnny")
         self.root.geometry("360x190")
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self._quit)

@@ -47,8 +47,8 @@ class DiagnosticStoreTests(unittest.TestCase):
             "answer": "private answer",
             "nested": {
                 "note": "Bearer secret-value",
-                "path": r"C:\Users\Fred\project",
-                "forward_path": "C:/Users/Fred/project",
+                "path": r"C:\Users\example\project",
+                "forward_path": "C:/Users/example/project",
                 "ssh": "-o IdentityFile=C:/secret/key",
                 "voice": "reference_path=C:/voices/rick.wav",
             },
@@ -63,7 +63,7 @@ class DiagnosticStoreTests(unittest.TestCase):
         store = DiagnosticStore(self.root / "metrics.json")
         for unsafe in (
             "transcript private words",
-            "C:/Users/Fred/private",
+            "C:/Users/example/private",
             "state-transition",
         ):
             with self.subTest(unsafe=unsafe), self.assertRaises(ValueError):

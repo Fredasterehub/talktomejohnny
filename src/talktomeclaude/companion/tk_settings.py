@@ -282,7 +282,7 @@ class TkCompanionSurfaces:
         return stopped
 
     def open_settings(self) -> TkSurfaceWindow:
-        surface = self._new_surface("TalkToMeClaude settings", "560x400")
+        surface = self._new_surface("TalkToMeJohnny settings", "560x400")
         window = surface.window
         frame = self._tk.Frame(window, padx=12, pady=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -343,20 +343,27 @@ class TkCompanionSurfaces:
         self._tk.Label(frame, text="Assistant provider", anchor="w").grid(
             row=5, column=0, columnspan=2, sticky="w", pady=(12, 0)
         )
+        both = self._tk.Radiobutton(
+            frame,
+            text="Claude Code and Codex CLI (recommended)",
+            variable=assistant_provider,
+            value="both",
+        )
+        both.grid(row=6, column=0, columnspan=2, sticky="w")
         claude = self._tk.Radiobutton(
             frame,
-            text="Claude CLI",
+            text="Claude Code only",
             variable=assistant_provider,
             value="claude",
         )
-        claude.grid(row=6, column=0, columnspan=2, sticky="w")
+        claude.grid(row=7, column=0, columnspan=2, sticky="w")
         codex = self._tk.Radiobutton(
             frame,
-            text="Codex CLI",
+            text="Codex CLI only",
             variable=assistant_provider,
             value="codex",
         )
-        codex.grid(row=7, column=0, columnspan=2, sticky="w")
+        codex.grid(row=8, column=0, columnspan=2, sticky="w")
         restart = self._tk.Label(
             frame,
             text=(
@@ -367,7 +374,7 @@ class TkCompanionSurfaces:
             anchor="w",
             wraplength=520,
         )
-        restart.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        restart.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         def save() -> None:
             try:

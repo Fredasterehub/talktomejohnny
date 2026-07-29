@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shlex
+import shutil
 import threading
 from dataclasses import dataclass
 from enum import StrEnum
@@ -21,6 +23,16 @@ CODEX_OWNED_HOOK_MARKER = "talktomeclaude.windows-companion.codex.v1"
 CODEX_STOP_HOOK_COMMAND = (
     "talktomeclaude hook stop --transport --provider codex "
     f"--owner-marker {CODEX_OWNED_HOOK_MARKER}"
+)
+CLAUDE_SESSION_CONTROL_MARKER = "talktomejohnny.session-control.claude.v1"
+CODEX_SESSION_CONTROL_MARKER = "talktomejohnny.session-control.codex.v1"
+CLAUDE_SESSION_CONTROL_COMMAND = (
+    "talktomejohnny hook session --provider claude "
+    f"--owner-marker {CLAUDE_SESSION_CONTROL_MARKER}"
+)
+CODEX_SESSION_CONTROL_COMMAND = (
+    "talktomejohnny hook session --provider codex "
+    f"--owner-marker {CODEX_SESSION_CONTROL_MARKER}"
 )
 
 
@@ -44,6 +56,91 @@ class HookInspection:
     owned_entries: int
 
 
+def _quoted_command(executable: str, *arguments: str) -> str:
+    if not isinstance(executable, str) or not executable.strip():
+        raise ValueError("hook executable must be a non-empty string")
+    return shlex.join([executable, *arguments])
+
+
+def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
+    """Resolve the trusted CLI path that should be baked into installed hooks."""
+
+    active = os.environ if environment is None else environment
+    override = active.get(
+        "TALKTOMEJOHNNY_HOOK_EXECUTABLE"
+    ) or active.get("TALKTOMECLAUDE_HOOK_EXECUTABLE")
+    if isinstance(override, str) and override.strip():
+        return override.strip()
+    for candidate in ("talktomejohnny", "talktomeclaude"):
+        resolved = shutil.which(candidate, path=active.get("PATH"))
+        if resolved:
+            return resolved
+    return "talktomeclaude"
+
+
+def _stop_hook_entries(provider: str, executable: str) -> tuple[dict[str, str], ...]:
+    if provider == "claude":
+        return (
+            {
+                "type": "command",
+                "command": _quoted_command(
+                    executable,
+                    "hook",
+                    "stop",
+                    "--transport",
+                    "--owner-marker",
+                    OWNED_HOOK_MARKER,
+                ),
+            },
+        )
+    if provider == "codex":
+        return (
+            {
+                "type": "command",
+                "command": _quoted_command(
+                    executable,
+                    "hook",
+                    "stop",
+                    "--transport",
+                    "--provider",
+                    "codex",
+                    "--owner-marker",
+                    CODEX_OWNED_HOOK_MARKER,
+                ),
+            },
+        )
+    raise ValueError(f"unsupported assistant provider {provider!r}")
+
+
+def _session_control_entries(
+    provider: str, executable: str
+) -> dict[str, tuple[dict[str, str], ...]]:
+    if provider == "claude":
+        marker = CLAUDE_SESSION_CONTROL_MARKER
+        event_name = "UserPromptExpansion"
+    elif provider == "codex":
+        marker = CODEX_SESSION_CONTROL_MARKER
+        event_name = "UserPromptSubmit"
+    else:
+        raise ValueError(f"unsupported assistant provider {provider!r}")
+    entry = {
+        "type": "command",
+        "command": _quoted_command(
+            executable,
+            "hook",
+            "session",
+            "--provider",
+            provider,
+            "--owner-marker",
+            marker,
+        ),
+    }
+    return {
+        event_name: (entry,),
+        "SessionEnd": (dict(entry),),
+    }
+
+
 def _owned_entry(entry: dict[str, Any], owned: dict[str, str]) -> bool:
     return entry == owned
 
@@ -61,44 +158,72 @@ def _marker_conflict(
 
 def _command_entries(
     settings: dict[str, Any],
-) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
     hooks = settings.get("hooks")
     if hooks is None:
         return []
     if not isinstance(hooks, dict):
         raise HookSettingsError("assistant hooks must be an object")
-    stop = hooks.get("Stop")
-    if stop is None:
-        return []
-    if not isinstance(stop, list):
-        raise HookSettingsError("assistant Stop hooks must be a list")
-    found: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for rule in stop:
-        if not isinstance(rule, dict):
-            raise HookSettingsError("assistant Stop hook rule must be an object")
-        commands = rule.get("hooks")
-        if not isinstance(commands, list):
-            raise HookSettingsError("assistant Stop hook commands must be a list")
-        for command in commands:
-            if not isinstance(command, dict):
+    found: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    for event_name, rules in hooks.items():
+        if not isinstance(event_name, str):
+            raise HookSettingsError("assistant hook event must be a string")
+        if not isinstance(rules, list):
+            raise HookSettingsError(
+                f"assistant {event_name} hooks must be a list"
+            )
+        for rule in rules:
+            if not isinstance(rule, dict):
                 raise HookSettingsError(
-                    "assistant Stop hook command must be an object"
+                    f"assistant {event_name} hook rule must be an object"
                 )
-            found.append((rule, command))
+            commands = rule.get("hooks")
+            if not isinstance(commands, list):
+                raise HookSettingsError(
+                    f"assistant {event_name} hook commands must be a list"
+                )
+            for command in commands:
+                if not isinstance(command, dict):
+                    raise HookSettingsError(
+                        f"assistant {event_name} hook command must be an object"
+                    )
+                found.append((event_name, rule, command))
     return found
 
 
 def _inspect_settings(
-    settings: dict[str, Any], *, marker: str, owned_entry: dict[str, str]
+    settings: dict[str, Any],
+    *,
+    markers: frozenset[str],
+    owned_entries: dict[str, tuple[dict[str, str], ...]],
 ) -> HookInspection:
     entries = _command_entries(settings)
+    expected_owned = {
+        (event_name, json.dumps(entry, sort_keys=True, separators=(",", ":")))
+        for event_name, event_entries in owned_entries.items()
+        for entry in event_entries
+    }
     owned_count = sum(
-        _owned_entry(item, owned_entry) for _rule, item in entries
+        (
+            event_name,
+            json.dumps(item, sort_keys=True, separators=(",", ":")),
+        )
+        in expected_owned
+        for event_name, _rule, item in entries
     )
     conflict = any(
-        _marker_conflict(item, marker, owned_entry) for _rule, item in entries
+        (
+            isinstance(item.get("command"), str)
+            and any(marker in item["command"] for marker in markers)
+            and (
+                event_name,
+                json.dumps(item, sort_keys=True, separators=(",", ":")),
+            )
+            not in expected_owned
+        )
+        for event_name, _rule, item in entries
     )
-    if conflict or owned_count > 1:
+    if conflict or owned_count not in {0, len(expected_owned)}:
         return HookInspection(HookStatus.CONFLICT, owned_count)
     return HookInspection(
         HookStatus.INSTALLED if owned_count else HookStatus.ABSENT,
@@ -113,8 +238,8 @@ class _JsonHookManager:
         self,
         settings_path: str | os.PathLike[str],
         *,
-        marker: str,
-        command: str,
+        owned_entries: dict[str, tuple[dict[str, str], ...]],
+        markers: tuple[str, ...],
         purpose: str,
         max_conflict_attempts: int = 8,
         phase_hook: Callable[[str], None] | None = None,
@@ -122,8 +247,11 @@ class _JsonHookManager:
         if max_conflict_attempts < 1:
             raise ValueError("max conflict attempts must be positive")
         self.path = Path(settings_path)
-        self._marker = marker
-        self._owned_entry = {"type": "command", "command": command}
+        self._markers = frozenset(markers)
+        self._owned_entries = {
+            event_name: tuple(dict(entry) for entry in entries)
+            for event_name, entries in owned_entries.items()
+        }
         self._max_conflict_attempts = max_conflict_attempts
         self._phase_hook = phase_hook
         self._attempt_state = threading.local()
@@ -219,8 +347,8 @@ class _JsonHookManager:
         try:
             return _inspect_settings(
                 self._transaction.read(),
-                marker=self._marker,
-                owned_entry=self._owned_entry,
+                markers=self._markers,
+                owned_entries=self._owned_entries,
             )
         except HookSettingsError:
             raise
@@ -234,8 +362,8 @@ class _JsonHookManager:
             settings = copy.deepcopy(settings)
             inspection = _inspect_settings(
                 settings,
-                marker=self._marker,
-                owned_entry=self._owned_entry,
+                markers=self._markers,
+                owned_entries=self._owned_entries,
             )
             if inspection.status is HookStatus.CONFLICT:
                 raise HookSettingsError(
@@ -246,11 +374,18 @@ class _JsonHookManager:
             hooks = settings.setdefault("hooks", {})
             if not isinstance(hooks, dict):
                 raise HookSettingsError("assistant hooks must be an object")
-            stop = hooks.setdefault("Stop", [])
-            if not isinstance(stop, list):
-                raise HookSettingsError("assistant Stop hooks must be a list")
-            stop.append({"hooks": [dict(self._owned_entry)]})
-            installed = HookInspection(HookStatus.INSTALLED, 1)
+            for event_name, entries in self._owned_entries.items():
+                rules = hooks.setdefault(event_name, [])
+                if not isinstance(rules, list):
+                    raise HookSettingsError(
+                        f"assistant {event_name} hooks must be a list"
+                    )
+                for entry in entries:
+                    rules.append({"hooks": [dict(entry)]})
+            installed = HookInspection(
+                HookStatus.INSTALLED,
+                sum(len(entries) for entries in self._owned_entries.values()),
+            )
             return settings, installed
 
         try:
@@ -272,8 +407,8 @@ class _JsonHookManager:
             settings = copy.deepcopy(settings)
             inspection = _inspect_settings(
                 settings,
-                marker=self._marker,
-                owned_entry=self._owned_entry,
+                markers=self._markers,
+                owned_entries=self._owned_entries,
             )
             if inspection.status is HookStatus.CONFLICT:
                 raise HookSettingsError(
@@ -282,25 +417,29 @@ class _JsonHookManager:
             if inspection.status is HookStatus.ABSENT:
                 return settings, inspection
             hooks = settings["hooks"]
-            stop = hooks["Stop"]
-            retained_rules: list[dict[str, Any]] = []
-            for rule in stop:
-                commands = rule["hooks"]
-                retained = [
-                    item
-                    for item in commands
-                    if not _owned_entry(item, self._owned_entry)
-                ]
-                if retained:
-                    replacement = dict(rule)
-                    replacement["hooks"] = retained
-                    retained_rules.append(replacement)
-            if retained_rules:
-                hooks["Stop"] = retained_rules
-            else:
-                hooks.pop("Stop")
-                if not hooks:
-                    settings.pop("hooks")
+            for event_name, entries in self._owned_entries.items():
+                rules = hooks.get(event_name)
+                if not isinstance(rules, list):
+                    continue
+                owned = tuple(entries)
+                retained_rules: list[dict[str, Any]] = []
+                for rule in rules:
+                    commands = rule["hooks"]
+                    retained = [
+                        item
+                        for item in commands
+                        if not any(_owned_entry(item, entry) for entry in owned)
+                    ]
+                    if retained:
+                        replacement = dict(rule)
+                        replacement["hooks"] = retained
+                        retained_rules.append(replacement)
+                if retained_rules:
+                    hooks[event_name] = retained_rules
+                else:
+                    hooks.pop(event_name, None)
+            if not hooks:
+                settings.pop("hooks")
             absent = HookInspection(HookStatus.ABSENT, 0)
             return settings, absent
 
@@ -317,9 +456,37 @@ class _JsonHookManager:
             if inspection is not None
             else _inspect_settings(
                 updated,
-                marker=self._marker,
-                owned_entry=self._owned_entry,
+                markers=self._markers,
+                owned_entries=self._owned_entries,
             )
+        )
+
+
+class SessionControlHookManager(_JsonHookManager):
+    """Manage only the provider's deterministic TalkToMeJohnny session controls."""
+
+    def __init__(
+        self,
+        settings_path: str | os.PathLike[str],
+        *,
+        provider: str,
+        executable: str = "talktomejohnny",
+        max_conflict_attempts: int = 8,
+        phase_hook: Callable[[str], None] | None = None,
+    ) -> None:
+        if provider == "claude":
+            marker = CLAUDE_SESSION_CONTROL_MARKER
+        elif provider == "codex":
+            marker = CODEX_SESSION_CONTROL_MARKER
+        else:
+            raise ValueError(f"unsupported assistant provider {provider!r}")
+        super().__init__(
+            settings_path,
+            owned_entries=_session_control_entries(provider, executable),
+            markers=(marker,),
+            purpose=f"{provider}-session-control-hook-settings",
+            max_conflict_attempts=max_conflict_attempts,
+            phase_hook=phase_hook,
         )
 
 
@@ -330,13 +497,17 @@ class ClaudeHookManager(_JsonHookManager):
         self,
         settings_path: str | os.PathLike[str],
         *,
+        executable: str = "talktomeclaude",
         max_conflict_attempts: int = 8,
         phase_hook: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
             settings_path,
-            marker=OWNED_HOOK_MARKER,
-            command=CLAUDE_STOP_HOOK_COMMAND,
+            owned_entries={
+                "Stop": _stop_hook_entries("claude", executable),
+                **_session_control_entries("claude", executable),
+            },
+            markers=(OWNED_HOOK_MARKER, CLAUDE_SESSION_CONTROL_MARKER),
             purpose="claude-hook-settings",
             max_conflict_attempts=max_conflict_attempts,
             phase_hook=phase_hook,
@@ -350,13 +521,17 @@ class CodexHookManager(_JsonHookManager):
         self,
         settings_path: str | os.PathLike[str],
         *,
+        executable: str = "talktomeclaude",
         max_conflict_attempts: int = 8,
         phase_hook: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
             settings_path,
-            marker=CODEX_OWNED_HOOK_MARKER,
-            command=CODEX_STOP_HOOK_COMMAND,
+            owned_entries={
+                "Stop": _stop_hook_entries("codex", executable),
+                **_session_control_entries("codex", executable),
+            },
+            markers=(CODEX_OWNED_HOOK_MARKER, CODEX_SESSION_CONTROL_MARKER),
             purpose="codex-hook-settings",
             max_conflict_attempts=max_conflict_attempts,
             phase_hook=phase_hook,

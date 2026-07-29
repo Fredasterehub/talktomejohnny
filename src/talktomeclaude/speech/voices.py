@@ -20,6 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from talktomeclaude import config
 from talktomeclaude import registry
 from talktomeclaude.catalog import BUNDLED_VOICES, HF_VOICES_REPO, Voice
 
@@ -31,7 +32,9 @@ class TTSError(RuntimeError):
 
 
 def voices_dir() -> Path:
-    override = os.environ.get("TALKTOMECLAUDE_VOICES_DIR")
+    override = os.environ.get("TALKTOMEJOHNNY_VOICES_DIR") or os.environ.get(
+        "TALKTOMECLAUDE_VOICES_DIR"
+    )
     if override:
         return Path(override)
     return Path(__file__).resolve().parents[3] / "voices"
@@ -39,10 +42,12 @@ def voices_dir() -> Path:
 
 def cache_voices_dir() -> Path:
     """Local cache where downloaded voices are materialized (flat names)."""
-    override = os.environ.get("TALKTOMECLAUDE_VOICES_CACHE")
+    override = os.environ.get("TALKTOMEJOHNNY_VOICES_CACHE") or os.environ.get(
+        "TALKTOMECLAUDE_VOICES_CACHE"
+    )
     if override:
         return Path(override)
-    return Path.home() / ".cache" / "talktomeclaude" / "voices"
+    return config.preferred_cache_dir("voices")
 
 
 def _download_voice(voice: Voice, on_status=None) -> tuple[Path, Path]:

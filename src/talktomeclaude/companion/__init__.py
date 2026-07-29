@@ -1,4 +1,4 @@
-"""Presentation contracts for the TalkToMeClaude companion."""
+"""Presentation contracts for the TalkToMeJohnny companion."""
 
 from talktomeclaude.companion.contracts import (
     CompanionIntent,

@@ -14,6 +14,7 @@ from click.testing import CliRunner
 from talktomeclaude.assistant import (
     OWNED_HOOK_MARKER,
     AssistantEventCode,
+    SessionAttachmentRegistry,
 )
 from talktomeclaude.assistant.suppression import (
     CORRELATION_ENV,
@@ -33,7 +34,16 @@ class HookTransportTests(unittest.TestCase):
         self.environment = {
             "TALKTOMECLAUDE_REPLY_SPOOL": str(self.root),
             "TALKTOMECLAUDE_CONFIG_DIR": self.temp.name,
+            "TALKTOMEJOHNNY_ATTACHMENT_STATE": str(
+                Path(self.temp.name) / "attachment.json"
+            ),
         }
+        registry = SessionAttachmentRegistry(
+            self.environment["TALKTOMEJOHNNY_ATTACHMENT_STATE"]
+        )
+        self.lease = registry.open_live_lease("claude", pid=101)
+        self.lease.attach("session-1")
+        self.addCleanup(self.lease.close)
 
     @staticmethod
     def event(answer: str = "Café 世界 👋\nsecond line") -> dict[str, object]:
@@ -118,6 +128,24 @@ class HookTransportTests(unittest.TestCase):
         self.assertEqual(rejected.output + accepted.output, "")
         synth.assert_not_called()
         self.assertEqual(len(ReplySpool(self.root).pending()), 1)
+
+    def test_hidden_cli_transport_ignores_an_unattached_claude_session(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "hook",
+                "stop",
+                "--transport",
+                "--owner-marker",
+                OWNED_HOOK_MARKER,
+            ],
+            input=json.dumps(self.event() | {"session_id": "other-session"}),
+            env={**os.environ, **self.environment},
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(ReplySpool(self.root).pending(), ())
 
     def test_transport_storage_failure_still_exits_zero_without_content(self) -> None:
         runner = CliRunner()

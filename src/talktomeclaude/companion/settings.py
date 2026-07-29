@@ -23,7 +23,7 @@ AUTO_SUBMIT_WARNING = (
     "finish-toggle; the operator is responsible for the intended tab, pane, shell, "
     "and cursor position."
 )
-DEFAULT_PREVIEW_TEXT = "Hello. This is your TalkToMeClaude voice."
+DEFAULT_PREVIEW_TEXT = "Hello. This is your TalkToMeJohnny voice."
 
 
 class SettingsError(RuntimeError):

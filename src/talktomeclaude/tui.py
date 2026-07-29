@@ -263,7 +263,9 @@ class QueueKeys:
         return False
 
 
-def discover_remote_projects(remote: str, root: str = "/DEV") -> list[str]:
+def discover_remote_projects(
+    remote: str, root: str = "/srv/projects"
+) -> list[str]:
     inner = (
         f"find -- {shlex.quote(root)} -mindepth 1 -maxdepth 1 -type d "
         "-not -name '.*' -print"
@@ -375,7 +377,10 @@ class PickProject(ModalScreen[str]):
                 self.dismiss(path)
 
         self.app.push_screen(
-            TextPromptScreen("Remote project path", self._current or "/DEV/"), _entered
+            TextPromptScreen(
+                "Remote project path", self._current or "/srv/projects/"
+            ),
+            _entered,
         )
 
     def action_cancel(self) -> None:
@@ -958,7 +963,11 @@ class TalkToMeApp(App[None]):
         )
 
     def _run_discovery(self) -> None:
-        root = str(PurePosixPath(self.remote_cwd).parent) if self.remote_cwd else "/DEV"
+        root = (
+            str(PurePosixPath(self.remote_cwd).parent)
+            if self.remote_cwd
+            else "/srv/projects"
+        )
         try:
             projects = discover_remote_projects(self.remote, root)
         except TUIError as exc:

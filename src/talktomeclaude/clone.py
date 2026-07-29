@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
+from talktomeclaude import config
 from talktomeclaude.speech.voices import TTSError
 
 _SAMPLE_RATE_FALLBACK = 24000
@@ -51,10 +52,12 @@ def ytdlp_command(url: str, dest: str) -> list[str]:
 
 
 def clone_cache_dir() -> Path:
-    override = os.environ.get("TALKTOMECLAUDE_CLONE_CACHE")
+    override = os.environ.get("TALKTOMEJOHNNY_CLONE_CACHE") or os.environ.get(
+        "TALKTOMECLAUDE_CLONE_CACHE"
+    )
     if override:
         return Path(override)
-    return Path.home() / ".cache" / "talktomeclaude" / "hf"
+    return config.preferred_cache_dir("hf")
 
 
 def _ensure_hf_home() -> None:

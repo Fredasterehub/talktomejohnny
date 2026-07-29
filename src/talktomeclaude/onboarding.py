@@ -122,7 +122,7 @@ class OnboardingScreen(Screen[bool]):
             yield Input(id="ob-remote-target", placeholder="user@host")
         elif step == "remote-cwd":
             yield Static("Remote project directory (blank for the home directory)")
-            yield Input(id="ob-remote-cwd", placeholder="/DEV/project")
+            yield Input(id="ob-remote-cwd", placeholder="/srv/projects/example")
         elif step == "voice":
             yield Static("Pick a first voice")
             options = ["Auto (recommended)"]

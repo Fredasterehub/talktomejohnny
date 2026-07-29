@@ -15,6 +15,16 @@ from talktomeclaude.assistant.hooks import (
     ClaudeHookManager,
     CodexHookManager,
     HookSettingsError,
+    resolve_hook_executable,
+)
+from talktomeclaude.assistant.skills import (
+    SkillInstallError,
+    install_control_skills,
+)
+from talktomeclaude.assistant import SessionAttachmentRegistry
+from talktomeclaude.assistant.session_control import (
+    LiveLeaseHeartbeatOwner,
+    attachment_state_path,
 )
 from talktomeclaude.capture import (
     CaptureMode,
@@ -71,7 +81,7 @@ class CompanionStartupError(RuntimeError):
     """The configured production companion cannot start safely."""
 
 
-_REMOTE_REPLY_COMMAND = ("talktomeclaude", "hook", "stream")
+_REMOTE_REPLY_COMMAND = ("talktomejohnny", "hook", "stream")
 
 
 def _remote_reply_command(provider: str) -> tuple[str, ...]:
@@ -98,6 +108,43 @@ def _reply_inbox_path(root: Path, provider: str) -> Path:
     raise ValueError(f"unsupported assistant provider {provider!r}")
 
 
+def _active_providers(provider: str) -> tuple[str, ...]:
+    if provider == "both":
+        return ("claude", "codex")
+    if provider in {"claude", "codex"}:
+        return (provider,)
+    raise ValueError(f"unsupported assistant provider {provider!r}")
+
+
+def _build_production_reply_inbox(
+    root: Path,
+    *,
+    remote: str | None,
+    provider: str,
+) -> "ProductionReplyInbox | CompositeReplyInbox":
+    registry = (
+        SessionAttachmentRegistry(attachment_state_path()) if remote is None else None
+    )
+    inboxes = {
+        selected: ProductionReplyInbox(
+            ReplyReceiver(_reply_inbox_path(root, selected)),
+            local_spool=(
+                None
+                if remote
+                else ReplySpool(_reply_spool_path(root, selected))
+            ),
+            remote=remote,
+            remote_command=_remote_reply_command(selected),
+            provider=selected,
+            attachment_registry=registry,
+        )
+        for selected in _active_providers(provider)
+    }
+    if len(inboxes) == 1:
+        return next(iter(inboxes.values()))
+    return CompositeReplyInbox(inboxes)
+
+
 def _safe_stt_status(message: str) -> str:
     """Reduce third-party status prose to a content-free capability code."""
 
@@ -122,18 +169,24 @@ def ensure_companion_hook(
     local_settings_path: str | Path | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
-    """Idempotently install only the selected provider's owned Stop hook.
-
-    Codex uses its user hook layer so an explicitly attached session can start in
-    any directory. The child-only activation marker still excludes plain Codex
-    sessions from reply transport.
-    """
+    """Idempotently install the selected provider lifecycle integrations."""
 
     if provider not in config.ASSISTANT_PROVIDERS:
         raise CompanionStartupError(f"unsupported assistant provider {provider!r}")
 
+    if provider == "both":
+        for selected in ("claude", "codex"):
+            ensure_companion_hook(
+                remote,
+                provider=selected,
+                remote_cwd=remote_cwd,
+                local_settings_path=local_settings_path,
+                runner=runner,
+            )
+        return
+
     if remote:
-        remote_install = ["talktomeclaude", "hook", "install"]
+        remote_install = ["talktomejohnny", "hook", "install"]
         if provider == "codex":
             remote_install.extend(["--provider", "codex"])
         command = [
@@ -159,12 +212,12 @@ def ensure_companion_hook(
             )
         except (OSError, subprocess.SubprocessError) as exc:
             raise CompanionStartupError(
-                f"remote {provider.title()} Stop hook installation failed"
+                f"remote {provider.title()} lifecycle hook installation failed"
             ) from exc
         if result.returncode != 0:
             raise CompanionStartupError(
-                f"remote {provider.title()} Stop hook is unavailable; "
-                "install TalkToMeClaude on the remote"
+                f"remote {provider.title()} lifecycle hooks are unavailable; "
+                "install TalkToMeJohnny on the remote"
             )
         return
     target = (
@@ -177,15 +230,17 @@ def ensure_companion_hook(
         )
     )
     try:
+        executable = resolve_hook_executable()
         manager = (
-            ClaudeHookManager(target)
+            ClaudeHookManager(target, executable=executable)
             if provider == "claude"
-            else CodexHookManager(target)
+            else CodexHookManager(target, executable=executable)
         )
         manager.install()
-    except HookSettingsError as exc:
+        install_control_skills(provider)
+    except (HookSettingsError, SkillInstallError) as exc:
         raise CompanionStartupError(
-            f"local {provider.title()} Stop hook installation failed"
+            f"local {provider.title()} lifecycle hook installation failed"
         ) from exc
 
 
@@ -247,6 +302,8 @@ class ProductionReplyInbox:
         local_spool: ReplySpool | None = None,
         remote: str | None = None,
         remote_command: tuple[str, ...] = _REMOTE_REPLY_COMMAND,
+        provider: str = "claude",
+        attachment_registry: SessionAttachmentRegistry | None = None,
         shutdown_deadline_seconds: float = 1.2,
     ) -> None:
         if shutdown_deadline_seconds <= 0:
@@ -255,9 +312,12 @@ class ProductionReplyInbox:
         self._spool = local_spool
         self._remote = remote
         self._remote_command = remote_command
+        self._provider = provider
+        self._attachment_registry = attachment_registry
         self._shutdown_deadline = shutdown_deadline_seconds
         self._inbox: DurableReplyInbox | None = None
         self._transport: SSHTransportOwner | None = None
+        self._lease_owner: LiveLeaseHeartbeatOwner | None = None
         self._lock = threading.Lock()
 
     def start(
@@ -308,6 +368,15 @@ class ProductionReplyInbox:
                 )
             self._inbox = inbox
             self._transport = transport_owner
+            lease_owner = None
+            if self._remote is None and self._attachment_registry is not None:
+                lease_owner = LiveLeaseHeartbeatOwner(
+                    self._attachment_registry,
+                    self._provider,
+                    shutdown_timeout_seconds=min(1.0, self._shutdown_deadline),
+                )
+                lease_owner.start()
+            self._lease_owner = lease_owner
             inbox.start()
             if transport_owner is not None:
                 transport_owner.start()
@@ -316,8 +385,10 @@ class ProductionReplyInbox:
         with self._lock:
             inbox = self._inbox
             transport = self._transport
+            lease_owner = self._lease_owner
             self._inbox = None
             self._transport = None
+            self._lease_owner = None
         results: dict[str, bool] = {}
         threads: list[threading.Thread] = []
 
@@ -340,6 +411,8 @@ class ProductionReplyInbox:
             launch("transport", lambda: transport.stop().stopped)
         if inbox is not None:
             launch("inbox", lambda: inbox.stop().stopped)
+        if lease_owner is not None:
+            launch("lease", lease_owner.stop)
         deadline = time.monotonic() + self._shutdown_deadline
         for thread in threads:
             thread.join(max(0.0, deadline - time.monotonic()))
@@ -347,6 +420,101 @@ class ProductionReplyInbox:
             all(not thread.is_alive() for thread in threads)
             and len(results) == len(threads)
             and all(results.values())
+        )
+
+
+class CompositeReplyInbox:
+    """Run isolated provider inboxes while exposing one runtime callback surface."""
+
+    def __init__(
+        self,
+        inboxes: dict[str, ProductionReplyInbox],
+        *,
+        shutdown_deadline_seconds: float = 1.5,
+    ) -> None:
+        if not inboxes:
+            raise ValueError("at least one provider inbox is required")
+        if shutdown_deadline_seconds <= 0:
+            raise ValueError("reply inbox shutdown deadline must be positive")
+        self._inboxes = dict(inboxes)
+        self._shutdown_deadline = shutdown_deadline_seconds
+        self._started = False
+        self._lock = threading.Lock()
+
+    def start(
+        self,
+        on_reply: Callable[[Any], bool],
+        on_status: Callable[[str], None],
+    ) -> None:
+        with self._lock:
+            if self._started:
+                return
+            self._started = True
+        provider_status: dict[str, str] = {}
+        status_lock = threading.Lock()
+        last_status: list[str | None] = [None]
+
+        def observe(provider: str, status: str) -> None:
+            with status_lock:
+                provider_status[provider] = status
+                aggregate = None
+                if "connected" in provider_status.values():
+                    aggregate = "connected"
+                elif len(provider_status) == len(self._inboxes) and all(
+                    value == "disconnected" for value in provider_status.values()
+                ):
+                    aggregate = "disconnected"
+                if aggregate is None or aggregate == last_status[0]:
+                    return
+                last_status[0] = aggregate
+            on_status(aggregate)
+
+        started: list[ProductionReplyInbox] = []
+        try:
+            for provider, inbox in self._inboxes.items():
+                inbox.start(
+                    on_reply,
+                    lambda status, provider=provider: observe(provider, status),
+                )
+                started.append(inbox)
+        except BaseException:
+            for inbox in reversed(started):
+                inbox.stop()
+            with self._lock:
+                self._started = False
+            raise
+
+    def stop(self) -> bool:
+        with self._lock:
+            if not self._started:
+                return True
+            self._started = False
+        results: list[bool] = []
+        result_lock = threading.Lock()
+
+        def stop_one(inbox: ProductionReplyInbox) -> None:
+            stopped = inbox.stop()
+            with result_lock:
+                results.append(stopped)
+
+        threads = [
+            threading.Thread(
+                target=stop_one,
+                args=(inbox,),
+                name=f"ttj-composite-inbox-stop-{provider}",
+                daemon=True,
+            )
+            for provider, inbox in self._inboxes.items()
+        ]
+        for thread in threads:
+            thread.start()
+        deadline = time.monotonic() + self._shutdown_deadline
+        for thread in threads:
+            thread.join(max(0.0, deadline - time.monotonic()))
+        return bool(
+            len(results) == len(threads)
+            and all(results)
+            and all(not thread.is_alive() for thread in threads)
         )
 
 
@@ -558,12 +726,10 @@ def build_headless_controller() -> CompanionController:
         initially_muted=not config.voice_assist_enabled(),
         on_answer_finished=lambda: holder["controller"].speech_finished(),
     )
-    receiver = ReplyReceiver(_reply_inbox_path(root, provider))
-    inbox = ProductionReplyInbox(
-        receiver,
-        local_spool=None if remote else ReplySpool(_reply_spool_path(root, provider)),
+    inbox = _build_production_reply_inbox(
+        root,
         remote=remote,
-        remote_command=_remote_reply_command(provider),
+        provider=provider,
     )
     mode = (
         CaptureMode.HOLD_TO_TALK
@@ -629,12 +795,10 @@ def build_desktop_application() -> DesktopCompanionApplication:
         initially_muted=not config.voice_assist_enabled(),
         on_answer_finished=lambda: holder["controller"].speech_finished(),
     )
-    receiver = ReplyReceiver(_reply_inbox_path(root, provider))
-    inbox = ProductionReplyInbox(
-        receiver,
-        local_spool=None if remote else ReplySpool(_reply_spool_path(root, provider)),
+    inbox = _build_production_reply_inbox(
+        root,
         remote=remote,
-        remote_command=_remote_reply_command(provider),
+        provider=provider,
     )
     surface_holder: dict[str, TkCompanionSurfaces] = {}
     review_holder: dict[str, Callable[[], None]] = {}

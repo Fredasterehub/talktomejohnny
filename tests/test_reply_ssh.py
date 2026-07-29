@@ -126,7 +126,7 @@ def _line(document: dict[str, object]) -> bytes:
 class SSHConnectionSpecTests(unittest.TestCase):
     def test_builds_batch_mode_persistent_helper_command(self) -> None:
         spec = SSHConnectionSpec(
-            remote="dev@192.168.2.122",
+            remote="user@example-host",
             remote_command=("python3", "-m", "talktomeclaude.reply.remote", "stream"),
             connect_timeout_seconds=1.2,
         )
@@ -136,7 +136,7 @@ class SSHConnectionSpecTests(unittest.TestCase):
         self.assertEqual(argv[0:3], ["ssh", "-T", "-o"])
         self.assertIn("BatchMode=yes", argv)
         self.assertIn("ConnectTimeout=2", argv)
-        self.assertEqual(argv[-2], "dev@192.168.2.122")
+        self.assertEqual(argv[-2], "user@example-host")
         self.assertEqual(
             argv[-1], "python3 -m talktomeclaude.reply.remote stream"
         )

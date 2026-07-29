@@ -342,7 +342,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--remote", default="proxmox-dev")
+    parser.add_argument("--remote", default="user@example-host")
     parser.add_argument("--repository", default=str(Path(__file__).resolve().parents[2]))
     args = parser.parse_args()
     if (

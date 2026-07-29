@@ -1,4 +1,4 @@
-"""Command-line entry point for talktomeclaude."""
+"""Compatibility implementation behind the TalkToMeJohnny CLI."""
 
 from pathlib import Path
 
@@ -18,8 +18,17 @@ from talktomeclaude.tts import (
 @click.pass_context
 def main(ctx: click.Context) -> None:
     """Use voice as a medium for Claude Code or Codex CLI."""
+    from talktomeclaude import config
+
+    try:
+        config.migrate_legacy_state()
+    except config.ConfigLoadError as exc:
+        # Transport hooks must fail closed without disrupting an assistant
+        # turn. Interactive commands surface migration failures clearly.
+        if ctx.invoked_subcommand != "hook":
+            raise click.ClickException(str(exc)) from exc
     if ctx.invoked_subcommand is None:
-        from talktomeclaude import config, onboarding
+        from talktomeclaude import onboarding
 
         if config.onboarding_needed(onboarding.CURRENT_ONBOARDING_VERSION):
             onboarding.run_onboarding()
@@ -55,11 +64,12 @@ def setup(reset: bool, force: bool) -> None:
 )
 @click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
 def codex(codex_args: tuple[str, ...]) -> None:
-    """Launch an explicitly voice-attached Codex CLI session.
+    """Launch the legacy wrapper for an explicitly voice-attached Codex session.
 
     All arguments after ``codex`` are passed through unchanged. The activation
     marker is inherited only by this Codex process and its lifecycle hooks, so
-    unrelated Codex sessions cannot enter the companion reply spool.
+    unrelated Codex sessions cannot enter the companion reply spool. Normal
+    provider-neutral activation uses ``$talktomejohnny on`` inside plain Codex.
     """
 
     import os
@@ -101,7 +111,7 @@ def speak(text: str, out_path: Path | None, voice_name: str | None) -> None:
     `voice create`) renders through the optional cloning engine.
     """
     playback = out_path is None
-    target_path = out_path or _temporary_wav_path("talktomeclaude-")
+    target_path = out_path or _temporary_wav_path("talktomejohnny-")
     voice_name = _resolve_default_voice(voice_name)
     try:
         voice = synthesize(
@@ -167,7 +177,7 @@ def _speak_reply(text: str) -> None:
 
     if not config.voice_assist_enabled():
         return
-    wav_path = _temporary_wav_path("talktomeclaude-listen-")
+    wav_path = _temporary_wav_path("talktomejohnny-listen-")
     try:
         synthesize(text, wav_path, _resolve_default_voice(None))
         _play_wav(wav_path)
@@ -607,7 +617,7 @@ def config_set(key: str, value: str) -> None:
 
     Known keys: recording-mode (always-on, push-to-talk, push-toggle),
     voice-assist (on, off), assistant-auto-submit (on, off),
-    assistant-provider (claude, codex),
+    assistant-provider (both, claude, codex),
     remote (user@host, or "local"/"none" to clear),
     remote-cwd (remote project path, or "home"/"none" to clear),
     barge-in (on, off), claude-permissions (off, skip, acceptEdits,
@@ -783,25 +793,42 @@ def hook() -> None:
     show_default=True,
 )
 def hook_install(settings_path: Path | None, provider: str) -> None:
-    """Install the owned durable Stop hook without replacing other hooks."""
+    """Install the owned lifecycle hooks and visible control command."""
 
     from talktomeclaude.assistant.hooks import (
         ClaudeHookManager,
         CodexHookManager,
         HookSettingsError,
+        resolve_hook_executable,
     )
+    from talktomeclaude.assistant.skills import (
+        SkillInstallError,
+        install_control_skills,
+    )
+    from talktomeclaude import config
 
+    try:
+        config.migrate_legacy_state()
+    except config.ConfigLoadError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    executable = resolve_hook_executable()
     target = settings_path or (
         Path.home() / ".claude" / "settings.json"
         if provider == "claude"
         else Path.home() / ".codex" / "hooks.json"
     )
-    manager = ClaudeHookManager(target) if provider == "claude" else CodexHookManager(target)
+    manager = (
+        ClaudeHookManager(target, executable=executable)
+        if provider == "claude"
+        else CodexHookManager(target, executable=executable)
+    )
     try:
         inspection = manager.install()
-    except HookSettingsError as exc:
+        install_control_skills(provider)
+    except (HookSettingsError, SkillInstallError) as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(f"companion Stop hook {inspection.status.value}")
+    click.echo(f"companion lifecycle hooks {inspection.status.value}")
 
 
 @hook.command("status")
@@ -818,7 +845,7 @@ def hook_install(settings_path: Path | None, provider: str) -> None:
     show_default=True,
 )
 def hook_status(settings_path: Path | None, provider: str) -> None:
-    """Report only this companion's owned Stop-hook status."""
+    """Report only this companion's owned lifecycle-hook status."""
 
     from talktomeclaude.assistant.hooks import (
         ClaudeHookManager,
@@ -849,21 +876,84 @@ def hook_status(settings_path: Path | None, provider: str) -> None:
 def hook_stream(provider: str) -> None:
     """Run the durable reply stream with this console script's Python."""
 
+    from talktomeclaude.assistant import SessionAttachmentRegistry
+    from talktomeclaude.assistant.session_control import (
+        LiveLeaseHeartbeatOwner,
+        attachment_state_path,
+    )
     from talktomeclaude.reply.remote import main as run_remote_stream
 
     from talktomeclaude import config as settings
 
-    if provider == "claude":
-        raise SystemExit(run_remote_stream(["stream"]))
-    raise SystemExit(
-        run_remote_stream(
+    arguments = ["stream"]
+    if provider == "codex":
+        arguments.extend(
             [
-                "stream",
                 "--spool-root",
                 str(settings.config_dir() / "reply-spool-codex"),
             ]
         )
+    registry = SessionAttachmentRegistry(attachment_state_path())
+    with LiveLeaseHeartbeatOwner(registry, provider):
+        raise SystemExit(run_remote_stream(arguments))
+
+
+@hook.command("session", hidden=True)
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "codex"]),
+    required=True,
+    hidden=True,
+)
+@click.option("--owner-marker", required=True, hidden=True)
+def hook_session(provider: str, owner_marker: str) -> None:
+    """Apply an exact-session TalkToMeJohnny attach/detach command."""
+
+    import json
+    import os
+    import sys
+
+    from talktomeclaude.assistant import SessionAttachmentRegistry
+    from talktomeclaude.assistant.hooks import (
+        CLAUDE_SESSION_CONTROL_MARKER,
+        CODEX_SESSION_CONTROL_MARKER,
     )
+    from talktomeclaude.assistant.session_control import (
+        attachment_state_path,
+        handle_session_control_event,
+        read_session_control_event,
+    )
+
+    expected_marker = (
+        CLAUDE_SESSION_CONTROL_MARKER
+        if provider == "claude"
+        else CODEX_SESSION_CONTROL_MARKER
+    )
+    if owner_marker != expected_marker:
+        return
+    event = read_session_control_event(sys.stdin)
+    if event is None:
+        return
+    try:
+        result = handle_session_control_event(
+            event,
+            provider=provider,
+            registry=SessionAttachmentRegistry(attachment_state_path(os.environ)),
+        )
+    except Exception:
+        # Lifecycle hooks must never prevent the assistant from closing or a
+        # normal user prompt from reaching the model.
+        return
+    if result is not None:
+        click.echo(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
 
 
 @hook.command()
@@ -916,9 +1006,25 @@ def stop(
             if provider == "claude"
             else CODEX_OWNED_HOOK_MARKER
         )
-        active = provider == "claude" or os.environ.get(
+        active = False
+        if event is not None:
+            from talktomeclaude.assistant import SessionAttachmentRegistry
+            from talktomeclaude.assistant.session_control import (
+                attachment_state_path,
+                session_is_attached,
+            )
+
+            active = session_is_attached(
+                event,
+                provider=provider,
+                registry=SessionAttachmentRegistry(
+                    attachment_state_path(os.environ)
+                ),
+            )
+        if provider == "codex" and os.environ.get(
             "TALKTOMECLAUDE_CODEX_ACTIVE"
-        ) == "1"
+        ) == "1":
+            active = True
         if event is not None and owner_marker == expected_marker and active:
             try:
                 if provider == "claude":
@@ -976,7 +1082,7 @@ def stop(
     if dry_run:
         click.echo("SPEAK: " + " ".join(dialogue.split()))
         return
-    wav_path = _temporary_wav_path("talktomeclaude-hook-")
+    wav_path = _temporary_wav_path("talktomejohnny-hook-")
     try:
         synthesize(dialogue, wav_path, None)
         _play_wav(wav_path)

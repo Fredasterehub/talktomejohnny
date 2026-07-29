@@ -17,7 +17,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "transcript.jsonl"
 class InlineCodeTests(unittest.TestCase):
     def test_inline_code_content_is_never_spoken(self) -> None:
         spoken = speakable(
-            "Run `rm -rf /tmp/scratch` to reset, then audit `forbidden_function`."
+            "Run `python -m pytest -q tests/synthetic`, then audit `forbidden_function`."
         )
         self.assertNotIn("rm -rf", spoken)
         self.assertNotIn("forbidden_function", spoken)

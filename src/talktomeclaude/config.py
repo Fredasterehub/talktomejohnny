@@ -9,19 +9,27 @@ state across two files (an ``assist off`` that never mutes the hook).
 """
 
 import os
+import shutil
+import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
-from talktomeclaude.storage import AtomicStorageError, ConfigStore
+from talktomeclaude.storage import AtomicJsonTransaction, AtomicStorageError, ConfigStore
 
 _CONFIG_FILE = "config.json"
 _NATIVE_PATH = type(Path())
+_PRODUCT_DIR = "talktomejohnny"
+_LEGACY_PRODUCT_DIR = "talktomeclaude"
+_VOICE_REGISTRY_FILE = "voices.json"
+_VOICE_REFS_DIR = "voice-refs"
+_LEGACY_MIGRATION_MARKER = ".legacy-state-migration.json"
 
 RECORDING_MODES = ("always-on", "push-to-talk", "push-toggle")
 DEFAULT_RECORDING_MODE = "push-to-talk"
 DEFAULT_COMPANION_RECORDING_MODE = "push-toggle"
 DEFAULT_WAKE_PHRASE = "yo claude"
-ASSISTANT_PROVIDERS = ("claude", "codex")
-DEFAULT_ASSISTANT_PROVIDER = "claude"
+ASSISTANT_PROVIDERS = ("both", "claude", "codex")
+DEFAULT_ASSISTANT_PROVIDER = "both"
 CLAUDE_PERMISSIONS = ("off", "skip", "acceptEdits", "bypassPermissions")
 STT_DEVICES = ("auto", "cuda", "cpu")
 COMMAND_NAMESPACE_POLICIES = ("allow-all", "ask-first-use", "allowlist")
@@ -32,14 +40,124 @@ class ConfigLoadError(RuntimeError):
     pass
 
 
-def config_dir() -> Path:
-    """Directory holding persistent state — identical in every environment."""
+def _env_override(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
+def _xdg_config_base() -> Path:
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    return _NATIVE_PATH(xdg).expanduser() if xdg else _NATIVE_PATH.home() / ".config"
+
+
+def _xdg_cache_base() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    return _NATIVE_PATH(xdg).expanduser() if xdg else _NATIVE_PATH.home() / ".cache"
+
+
+def _current_config_dir() -> Path:
+    override = _env_override("TALKTOMEJOHNNY_CONFIG_DIR", "TALKTOMECLAUDE_CONFIG_DIR")
+    if override:
+        return _NATIVE_PATH(override).expanduser()
+    return _xdg_config_base() / _PRODUCT_DIR
+
+
+def legacy_config_dir() -> Path:
     override = os.environ.get("TALKTOMECLAUDE_CONFIG_DIR")
     if override:
         return _NATIVE_PATH(override).expanduser()
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    base = _NATIVE_PATH(xdg).expanduser() if xdg else _NATIVE_PATH.home() / ".config"
-    return base / "talktomeclaude"
+    return _xdg_config_base() / _LEGACY_PRODUCT_DIR
+
+
+def config_dir() -> Path:
+    """Return the TalkToMeJohnny state root without implicit filesystem writes."""
+
+    return _current_config_dir()
+
+
+
+def preferred_cache_dir(*parts: str) -> Path:
+    """Return the current cache path, reusing a populated legacy cache in place."""
+
+    current_path = (_xdg_cache_base() / _PRODUCT_DIR).joinpath(*parts)
+    legacy_path = (_xdg_cache_base() / _LEGACY_PRODUCT_DIR).joinpath(*parts)
+    if current_path.exists() or not legacy_path.exists():
+        return current_path
+    return legacy_path
+
+
+def _copy_missing_file(source: Path, destination: Path) -> bool:
+    if not source.is_file() or destination.exists():
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    temp_path = Path(temp_name)
+    try:
+        os.close(descriptor)
+        shutil.copyfile(source, temp_path)
+        os.replace(temp_path, destination)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return True
+
+
+def _copy_missing_voice_refs(source_root: Path, destination_root: Path) -> int:
+    source_dir = source_root / _VOICE_REFS_DIR
+    destination_dir = destination_root / _VOICE_REFS_DIR
+    if not source_dir.is_dir():
+        return 0
+    copied = 0
+    for source in sorted(source_dir.iterdir()):
+        if _copy_missing_file(source, destination_dir / source.name):
+            copied += 1
+    return copied
+
+
+def migrate_legacy_state() -> bool:
+    """Copy supported legacy TalkToMeClaude state into the TalkToMeJohnny root."""
+
+    destination_root = config_dir()
+    source_root = legacy_config_dir()
+    if source_root == destination_root or not source_root.exists():
+        return False
+
+    copied_any: list[bool] = []
+
+    def migrate(_state: dict) -> dict:
+        copied_config = _copy_missing_file(
+            source_root / _CONFIG_FILE, destination_root / _CONFIG_FILE
+        )
+        copied_registry = _copy_missing_file(
+            source_root / _VOICE_REGISTRY_FILE,
+            destination_root / _VOICE_REGISTRY_FILE,
+        )
+        copied_refs = _copy_missing_voice_refs(source_root, destination_root)
+        copied_any.append(copied_config or copied_registry or copied_refs > 0)
+        return {
+            "version": 1,
+            "legacy_product": _LEGACY_PRODUCT_DIR,
+            "current_product": _PRODUCT_DIR,
+            "copied": {
+                _CONFIG_FILE: copied_config,
+                _VOICE_REGISTRY_FILE: copied_registry,
+                _VOICE_REFS_DIR: copied_refs,
+            },
+            "completed_at": datetime.now(UTC).isoformat(),
+        }
+
+    try:
+        AtomicJsonTransaction(
+            destination_root / _LEGACY_MIGRATION_MARKER,
+            purpose="legacy-state-migration",
+        ).update(migrate)
+    except (OSError, AtomicStorageError) as exc:
+        raise ConfigLoadError(f"legacy state migration failed ({exc})") from exc
+    return copied_any[0]
 
 
 def config_path() -> Path:

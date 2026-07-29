@@ -105,7 +105,7 @@ class ClaudeHookManagerTests(unittest.TestCase):
 
         self.manager.install()
         self.assertEqual(self.path.read_bytes(), first_install)
-        self.assertEqual(self.manager.inspect().owned_entries, 1)
+        self.assertEqual(self.manager.inspect().owned_entries, 3)
 
         self.assertEqual(self.manager.uninstall().status, HookStatus.ABSENT)
         after_uninstall = self.path.read_bytes()
@@ -197,7 +197,7 @@ class ClaudeHookManagerTests(unittest.TestCase):
         self.assertEqual(
             {document[f"unrelated-{index}"] for index in range(8)}, set(range(8))
         )
-        self.assertEqual(ClaudeHookManager(self.path).inspect().owned_entries, 1)
+        self.assertEqual(ClaudeHookManager(self.path).inspect().owned_entries, 3)
 
     def test_uncooperative_external_write_between_read_and_replace_is_retried(
         self,
@@ -236,7 +236,7 @@ class ClaudeHookManagerTests(unittest.TestCase):
         document = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(document["theme"], "dark")
         self.assertEqual(document["external-unrelated"], {"preserved": True})
-        self.assertEqual(manager.inspect().owned_entries, 1)
+        self.assertEqual(manager.inspect().owned_entries, 3)
 
     def test_external_conflict_retries_are_bounded_without_losing_latest_file(
         self,
@@ -308,7 +308,7 @@ class CodexHookManagerTests(unittest.TestCase):
             document["hooks"]["Stop"][1]["hooks"],
             [{"type": "command", "command": CODEX_STOP_HOOK_COMMAND}],
         )
-        self.assertEqual(self.manager.inspect().owned_entries, 1)
+        self.assertEqual(self.manager.inspect().owned_entries, 3)
 
     def test_uninstall_removes_only_codex_entry(self) -> None:
         self.manager.install()

@@ -1,155 +1,164 @@
-# llms.txt - talktomeclaude
-# Machine-readable instructions for AI assistants installing this tool for a user.
-# Format: YAML blocks for structured data, markdown for context.
+# llms.txt - TalkToMeJohnny
+# Machine-readable install and usage instructions for AI assistants.
 
 ## METADATA
 ```yaml
-name: talktomeclaude
-description: Local-first voice medium for Claude Code and the opt-in Windows Codex CLI provider. You speak using local Whisper-class STT; authoritative assistant replies return through lifecycle Stop hooks and local speech.
-repo: https://github.com/Fredasterehub/talktomeclaude
+name: talktomejohnny
+aliases:
+  - talktomeclaude
+description: Local-first voice medium for Claude Code and Codex CLI. Speech-to-text and speech output stay local. Exact-session attachment is handled by deterministic hooks.
+repo: https://github.com/Fredasterehub/talktomejohnny
 license: MIT
-version: 0.0.1
-entrypoint: talktomeclaude   # console script installed into the venv
+version: 0.1.0
+entrypoint: talktomejohnny
+```
+
+## COMPATIBILITY
+```yaml
+legacy_aliases:
+  cli: talktomeclaude
+  python_import: talktomeclaude
+  config_dir: ~/.config/talktomeclaude/
+  cache_dir: ~/.cache/talktomeclaude/
+  voice_registry: ~/.config/talktomeclaude/voices.json
+  voice_refs: ~/.config/talktomeclaude/voice-refs/
+note: Existing settings, voice references, and caches must be copied forward non-destructively during the migration. Do not strand or delete legacy data on first run.
 ```
 
 ## REQUIREMENTS
 ```yaml
 python: ">=3.11"
-clone_size: "~5 MB"            # voice models are NOT committed to git; fetched on first use (cache-on-demand)
-first_run_downloads:           # each downloaded ONCE then reused; all under ~/.cache/talktomeclaude/
-  tts_voices: "~250 MB total — 3 public-domain Piper voices from HF rhasspy/piper-voices, on first `speak`. Pre-fetch: talktomeclaude voices --download"
-  stt_model:
-    cpu_tier: "~486 MB (small.en)"
-    gpu_tier: "~3 GB (large-v3, needs NVIDIA + CUDA)"
-  cache_dir: "~/.cache/talktomeclaude/"
-system_packages:
-  linux: [libportaudio2, git]   # dnf: portaudio · pacman: portaudio  (PortAudio powers mic/speaker via sounddevice)
-  macos: []                     # git via Xcode Command Line Tools (auto-prompt on first git use)
-  windows: []                   # see GOTCHAS for the Stop-hook / Git Bash note
-depends_on_optional:
-  claude_code: "required only for the voice loop + Stop-hook plugin; the CLI works standalone"
-  codex_cli: "required only for the opt-in Windows companion Codex provider"
+system:
+  windows: "Git for Windows is recommended if you want bash hook execution for the automatic reply-speaking path."
+  linux: "libportaudio2 + git"
+  macos: "git via Xcode Command Line Tools on first use"
+assistant_hosts:
+  claude_code: "required only if you want the Claude voice loop"
+  codex_cli: "required only if you want the Codex voice loop"
 ```
 
 ## INSTALL_WINDOWS
 ```yaml
-# Windows Terminal (PowerShell)
 steps:
-  - cmd: 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'   # install uv (also fetches Python)
-  - note: "get the code — Code > Download ZIP and extract, OR: winget install --id Git.Git -e; git clone https://github.com/Fredasterehub/talktomeclaude.git"
-  - cmd: 'cd talktomeclaude'
+  - cmd: 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+  - cmd: 'git clone https://github.com/Fredasterehub/talktomejohnny.git'
+  - cmd: 'cd talktomejohnny'
   - cmd: 'uv venv --python 3.12'
   - cmd: 'uv pip install -e .'
-  - cmd: '.\.venv\Scripts\talktomeclaude speak "Hello from Claude."'   # verify
+  - cmd: '.\.venv\Scripts\talktomejohnny --help'
 ```
 
 ## INSTALL_MACOS
 ```yaml
-# Terminal.app (Apple Silicon or Intel). No CUDA on macOS -> STT runs the CPU tier (expected).
 steps:
-  - cmd: 'curl -LsSf https://astral.sh/uv/install.sh | sh'   # install uv (also fetches Python)
-  - cmd: 'git clone https://github.com/Fredasterehub/talktomeclaude.git'   # first git run prompts to install Command Line Tools
-  - cmd: 'cd talktomeclaude'
-  - cmd: 'uv venv --python 3.12 && uv pip install -e .'
-  - cmd: './.venv/bin/talktomeclaude speak "Hello from Claude."'   # verify
+  - cmd: 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+  - cmd: 'git clone https://github.com/Fredasterehub/talktomejohnny.git'
+  - cmd: 'cd talktomejohnny'
+  - cmd: 'uv venv --python 3.12'
+  - cmd: 'uv pip install -e .'
+  - cmd: './.venv/bin/talktomejohnny --help'
 ```
 
 ## INSTALL_LINUX
 ```yaml
 steps:
-  - cmd: 'sudo apt install -y libportaudio2 git'   # dnf: portaudio git · pacman: portaudio git
-  - cmd: 'curl -LsSf https://astral.sh/uv/install.sh | sh'   # install uv (also fetches Python)
-  - cmd: 'git clone https://github.com/Fredasterehub/talktomeclaude.git'
-  - cmd: 'cd talktomeclaude'
-  - cmd: 'uv venv --python 3.12 && uv pip install -e .'
-  - cmd: 'uv pip install -e ".[cuda]"'   # OPTIONAL: NVIDIA GPU tier for STT (large-v3)
-  - cmd: './.venv/bin/talktomeclaude speak "Hello from Claude."'   # verify
+  - cmd: 'sudo apt install -y libportaudio2 git'
+  - cmd: 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+  - cmd: 'git clone https://github.com/Fredasterehub/talktomejohnny.git'
+  - cmd: 'cd talktomejohnny'
+  - cmd: 'uv venv --python 3.12'
+  - cmd: 'uv pip install -e .'
+  - cmd: 'uv pip install -e ".[cuda]"'
+  - cmd: './.venv/bin/talktomejohnny --help'
 ```
 
-## PLUGIN_CLAUDE_CODE
+## ACTIVATION
 ```yaml
-# Registers a Stop hook that speaks Claude's reply after each turn.
-test:      'claude --plugin-dir .'      # from the project directory, loads the plugin for the session
-permanent: '/plugin install .'          # run INSIDE Claude Code to keep it
-mute:      'talktomeclaude assist off'  # full mute (hook stays silent); 'assist on' to re-enable
+claude_code:
+  normal_launch: claude
+  exact_attach_commands:
+    - /talktomejohnny on
+    - /talktomejohnny off
+    - /talktomejohnny status
+codex_cli:
+  normal_launch: codex
+  exact_attach_commands:
+    - $talktomejohnny on
+    - $talktomejohnny off
+    - $talktomejohnny status
+policy:
+  - One attached session is active globally at a time.
+  - Claude and Codex reply streams remain isolated.
+  - Ordinary claude and codex launches stay silent until explicitly attached.
+  - Detach stops future completions from being spoken; an already accepted in-flight reply may still finish.
+  - If the companion or host lease is offline or stale, fail closed instead of replaying backlog.
 ```
 
 ## TOPOLOGY
 ```yaml
-# Modular — accommodates any install. Pick per machine:
-all_local:
-  desc: "mic + Claude Code + speakers all on ONE machine (e.g. a Mac/PC laptop)."
-  setup: "default; no extra config. Just `talktomeclaude listen`."
-remote_ssh:
-  desc: "voice on the machine you sit at; Claude Code runs on a server (e.g. SSH into Proxmox/VPS). Server needs NO audio; client needs NO Claude Code."
-  how: "mic capture + STT + spoken reply stay local; only text crosses SSH. POSIX clients use a multiplexed connection; native Windows omits unsupported Unix control-socket options. claude runs on the server via a login shell."
+local_first:
+  desc: "Mic, STT, TTS, and UI on the machine the user sits at."
+remote_assistant:
+  desc: "Voice on the local machine, assistant on a remote host over SSH."
   setup:
-    - "server: install + log into Claude Code (claude --version works)."
-    - "client: install talktomeclaude; set up passwordless SSH keys to the server (required, or it prompts every utterance)."
-    - "client: talktomeclaude config set remote user@host   # persist once"
-    - "client: talktomeclaude config set remote-cwd /srv/project   # optional; remote project directory"
-    - "client: talktomeclaude listen   # per-run overrides: listen --remote user@host --remote-cwd /srv/project"
-  revert: "talktomeclaude config set remote local"
-  clear_project_dir: "talktomeclaude config set remote-cwd home"
+    - "install the assistant CLI on the remote host"
+    - "set up passwordless SSH"
+    - "configure the remote host and project directory"
+    - "launch the voice loop"
 ```
 
 ## USAGE
 ```yaml
 commands:
-  companion: 'talktomeclaude companion'              # Windows Stage A desktop companion (Tk + Win32)
-  codex_attached: 'talktomeclaude codex'             # launch only the Codex session intentionally attached to the companion
-  companion_headless: 'talktomeclaude companion --headless'  # production-backed recovery surface
-  legacy_tui: 'talktomeclaude tui'                   # explicit compatibility dashboard
-  speak:      'talktomeclaude speak "text" [--out file.wav] [--voice NAME]'
-  listen:     'talktomeclaude listen [--mode always-on|push-to-talk|push-toggle] [--remote user@host] [--remote-cwd PATH] [--once]'
-  transcribe: 'talktomeclaude transcribe AUDIO [--device auto|cuda|cpu] [--show-tier]'
-  filter:     'talktomeclaude filter transcript.jsonl'   # prints only spoken dialogue (never code/tools)
-  voices:     'talktomeclaude voices [--download]'       # list voices + licenses; --download pre-fetches all
-  config_set: 'talktomeclaude config set recording-mode|voice-assist|assistant-provider|remote|remote-cwd VALUE'
-  config_get: 'talktomeclaude config get recording-mode|voice-assist|assistant-provider|remote|remote-cwd'
-  assist:     'talktomeclaude assist on|off|status'
-default_recording_mode: push-to-talk
-windows_companion_recording_mode: push-toggle
-windows_companion_hotkey: Ctrl+Alt+Space
-stage_a_default: 'No-argument talktomeclaude still opens the legacy dashboard until the Windows physical gate passes.'
+  dashboard: 'talktomejohnny'
+  companion: 'talktomejohnny companion'
+  companion_headless: 'talktomejohnny companion --headless'
+  legacy_tui: 'talktomejohnny tui'
+  speak: 'talktomejohnny speak "text" [--out file.wav] [--voice NAME]'
+  listen: 'talktomejohnny listen [--mode always-on|push-to-talk|push-toggle] [--remote user@host] [--remote-cwd PATH] [--once]'
+  transcribe: 'talktomejohnny transcribe AUDIO [--device auto|cuda|cpu] [--show-tier]'
+  filter: 'talktomejohnny filter transcript.jsonl'
+  voices: 'talktomejohnny voices [--download]'
+  voice_create: 'talktomejohnny voice create NAME --reference PATH --no-sample'
+  config_set: 'talktomejohnny config set recording-mode|voice-assist|assistant-provider|remote|remote-cwd VALUE'
+  config_get: 'talktomejohnny config get recording-mode|voice-assist|assistant-provider|remote|remote-cwd'
+  assist: 'talktomejohnny assist on|off|status'
 ```
 
 ## WINDOWS_COMPANION
 ```yaml
 support: Windows 11 only
-delivery_contract: "The operator focuses an eligible terminal and places its blinking cursor. Finish-toggle snapshots that foreground target for one delivery, revalidates it before clipboard/paste/optional Enter, then discards it. It never pins or retargets a terminal across turns."
-auto_submit_warning: "Auto-submit sends Enter to the eligible foreground terminal captured at finish-toggle; the operator is responsible for the intended tab, pane, shell, and cursor position."
+delivery_contract: "The user chooses the exact terminal and cursor location. The companion captures that target for one delivery, revalidates it before paste/Enter, and discards it after completion."
+exact_attach_model:
+  claude_code: "/talktomejohnny on|off|status"
+  codex_cli: "$talktomejohnny on|off|status"
 recovery:
-  - talktomeclaude companion --headless
-  - talktomeclaude tui
-repository_guide: https://github.com/Fredasterehub/talktomeclaude/blob/main/docs/WINDOWS_COMPANION.md
-remote_helper: "Remote companion mode requires TalkToMeClaude on the selected assistant host and its console script on PATH for `hook install` and `hook stream`; the older listen topology does not. Codex uses a project-scoped additive Stop hook, explicit `talktomeclaude codex` activation, a separate remote reply spool, and a separate Windows durable inbox. The remote still needs no audio stack."
+  - "talktomejohnny companion --headless"
+  - "talktomejohnny tui"
 ```
 
 ## VOICES
 ```yaml
-# All public domain (trained from scratch; no copyrighted/celebrity voices). Fetched on first use from
-# HF rhasspy/piper-voices, cached at ~/.cache/talktomeclaude/voices (pre-fetch: talktomeclaude voices --download).
-# Piper runs as a subprocess (keeps project MIT).
-available:
-  - {name: en_US-ljspeech-high, accent: en_US, quality: high}
-  - {name: en_GB-cori-medium,   accent: en_GB, quality: medium}
-  - {name: en_US-bryce-medium,  accent: en_US, quality: medium}
+notes:
+  - "All bundled voices are public domain."
+  - "Voice downloads are cached locally and should be reused."
+  - "Existing voice references must be reused during the migration."
 ```
 
 ## GOTCHAS
 ```yaml
-windows_stop_hook:
-  problem: "The Stop hook is a bash .sh script; native Windows may not execute it (can open it in an editor)."
-  fix: "Install Git for Windows (winget install --id Git.Git -e) so Claude Code routes hooks through Git Bash. The CLI (speak/listen/transcribe/voices) works regardless; only the auto-speak hook needs Git Bash."
-windows_terminal_and_ssh:
-  note: "Native Windows listen uses stdlib msvcrt for push-to-talk/push-toggle; always-on needs no console key API. Windows OpenSSH runs without Unix ControlMaster/ControlPath/ControlPersist options; POSIX keeps multiplexing."
-macos_microphone:
-  problem: "First use of listen/recording: macOS asks Terminal for Microphone access; without it the mic returns silence."
-  fix: "Allow it (System Settings > Privacy & Security > Microphone > enable Terminal). speak needs no mic."
-linux_portaudio:
-  problem: "sounddevice needs system PortAudio on Linux (not bundled in the wheel)."
-  fix: "Install libportaudio2 (apt) / portaudio (dnf, pacman)."
-piper_platform_wheels:
-  note: "piper-tts ships wheels for Windows x64, macOS x64/arm64, Linux x64/aarch64. No Windows ARM64 or Alpine/musl wheel (those build from sdist)."
+windows_hooks:
+  note: "Native Windows may need Git for Windows so Claude Code can route bash hooks correctly."
+  recovery: "The CLI still works without it; only the automatic reply-speaking hook depends on bash hook execution."
+security:
+  note: "Do not store secrets, tokens, or private paths in the repository or in public docs."
 ```
+
+## REFERENCES
+```text
+README.md
+AGENTS.md
+docs/WINDOWS_COMPANION.md
+docs/DEPLOYMENT.md
+```
+

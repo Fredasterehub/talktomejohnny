@@ -13,6 +13,7 @@ from click.testing import CliRunner
 from talktomeclaude.assistant import (
     CODEX_OWNED_HOOK_MARKER,
     CODEX_STOP_HOOK_COMMAND,
+    SessionAttachmentRegistry,
 )
 
 from talktomeclaude.assistant.codex import (
@@ -181,7 +182,7 @@ class CodexCliIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(initial.exit_code, 0, initial.output)
-        self.assertEqual(initial.output.strip(), "claude")
+        self.assertEqual(initial.output.strip(), "both")
         self.assertEqual(changed.exit_code, 0, changed.output)
         self.assertEqual(current.exit_code, 0, current.output)
         self.assertEqual(current.output.strip(), "codex")
@@ -204,6 +205,11 @@ class CodexCliIntegrationTests(unittest.TestCase):
         result = self.runner.invoke(
             main,
             ["hook", "install", "--provider", "codex", "--settings", str(hooks)],
+            env={
+                **os.environ,
+                "HOME": str(self.root / "home"),
+                "USERPROFILE": str(self.root / "home"),
+            },
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
@@ -213,8 +219,49 @@ class CodexCliIntegrationTests(unittest.TestCase):
             document["hooks"]["Stop"][1]["hooks"][0]["command"],
             CODEX_STOP_HOOK_COMMAND,
         )
+        self.assertEqual(len(document["hooks"]["UserPromptSubmit"]), 1)
+        self.assertEqual(len(document["hooks"]["SessionEnd"]), 1)
+        self.assertTrue(
+            (self.root / "home" / ".agents" / "skills" / "talktomejohnny" / "SKILL.md").exists()
+        )
 
-    def test_transport_requires_voice_attached_codex_process(self) -> None:
+    def test_transport_accepts_an_exact_attached_codex_session_without_wrapper(
+        self,
+    ) -> None:
+        spool = self.root / "spool"
+        attachment = self.root / "attachment.json"
+        registry = SessionAttachmentRegistry(attachment)
+        lease = registry.open_live_lease("codex", pid=303)
+        self.addCleanup(lease.close)
+        lease.attach("session-1")
+        event = json.dumps(payload(), ensure_ascii=False)
+        environment = {
+            **os.environ,
+            "TALKTOMECLAUDE_REPLY_SPOOL": str(spool),
+            "TALKTOMECLAUDE_CONFIG_DIR": str(self.root),
+            "TALKTOMEJOHNNY_ATTACHMENT_STATE": str(attachment),
+        }
+
+        result = self.runner.invoke(
+            main,
+            [
+                "hook",
+                "stop",
+                "--transport",
+                "--provider",
+                "codex",
+                "--owner-marker",
+                CODEX_OWNED_HOOK_MARKER,
+            ],
+            input=event,
+            env=environment,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(result.output, "")
+        self.assertEqual(len(ReplySpool(spool).pending()), 1)
+
+    def test_transport_keeps_wrapper_activation_backward_compatible(self) -> None:
         spool = self.root / "spool"
         event = json.dumps(payload(), ensure_ascii=False)
         environment = {

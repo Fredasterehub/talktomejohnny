@@ -8,9 +8,11 @@ from unittest import mock
 
 from talktomeclaude.companion.app import (
     CompanionStartupError,
+    CompositeReplyInbox,
     DesktopCompanionApplication,
     PersistentTranscriberFactory,
     _REMOTE_REPLY_COMMAND,
+    _active_providers,
     _reply_inbox_path,
     _reply_spool_path,
     _remote_reply_command,
@@ -62,7 +64,7 @@ class PersistentTranscriberFactoryTests(unittest.TestCase):
     def test_third_party_stt_status_is_reduced_to_content_free_codes(self) -> None:
         self.assertEqual(_safe_stt_status("CUDA model ready"), "cuda")
         self.assertEqual(
-            _safe_stt_status("private transcript at C:/Users/Fred/file"),
+            _safe_stt_status("private transcript at C:/Users/example/file"),
             "updated",
         )
 
@@ -244,9 +246,24 @@ class HookBootstrapTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             settings = Path(temporary) / "settings.json"
-            ensure_companion_hook(None, local_settings_path=settings)
-            ensure_companion_hook(None, local_settings_path=settings)
-            wire = settings.read_text(encoding="utf-8")
+            home = Path(temporary) / "home"
+            with mock.patch.dict(
+                "os.environ",
+                {"HOME": str(home), "USERPROFILE": str(home)},
+                clear=False,
+            ):
+                ensure_companion_hook(None, local_settings_path=settings)
+                ensure_companion_hook(None, local_settings_path=settings)
+                wire = settings.read_text(encoding="utf-8")
+                self.assertTrue(
+                    (
+                        home
+                        / ".claude"
+                        / "skills"
+                        / "talktomejohnny"
+                        / "SKILL.md"
+                    ).exists()
+                )
         self.assertEqual(wire.count("talktomeclaude.windows-companion.v1"), 1)
 
     def test_remote_hook_uses_bounded_noninteractive_ssh(self) -> None:
@@ -255,7 +272,7 @@ class HookBootstrapTests(unittest.TestCase):
         ensure_companion_hook("dev@example", runner=runner)
         command = runner.call_args.args[0]
         self.assertEqual(command[:3], ["ssh", "-T", "-o"])
-        self.assertEqual(command[-2:], ["dev@example", "talktomeclaude hook install"])
+        self.assertEqual(command[-2:], ["dev@example", "talktomejohnny hook install"])
         self.assertEqual(runner.call_args.kwargs["timeout"], 15)
 
     def test_local_codex_hook_install_is_idempotent_and_owned(self) -> None:
@@ -264,17 +281,32 @@ class HookBootstrapTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             settings = Path(temporary) / "hooks.json"
-            ensure_companion_hook(
-                None,
-                provider="codex",
-                local_settings_path=settings,
-            )
-            ensure_companion_hook(
-                None,
-                provider="codex",
-                local_settings_path=settings,
-            )
-            wire = settings.read_text(encoding="utf-8")
+            home = Path(temporary) / "home"
+            with mock.patch.dict(
+                "os.environ",
+                {"HOME": str(home), "USERPROFILE": str(home)},
+                clear=False,
+            ):
+                ensure_companion_hook(
+                    None,
+                    provider="codex",
+                    local_settings_path=settings,
+                )
+                ensure_companion_hook(
+                    None,
+                    provider="codex",
+                    local_settings_path=settings,
+                )
+                wire = settings.read_text(encoding="utf-8")
+                self.assertTrue(
+                    (
+                        home
+                        / ".agents"
+                        / "skills"
+                        / "talktomejohnny"
+                        / "SKILL.md"
+                    ).exists()
+                )
         self.assertEqual(
             wire.count("talktomeclaude.windows-companion.codex.v1"), 1
         )
@@ -286,7 +318,7 @@ class HookBootstrapTests(unittest.TestCase):
         ensure_companion_hook(
             "dev@example",
             provider="codex",
-            remote_cwd="/DEV/ghostundo",
+            remote_cwd="/srv/projects/example-project",
             runner=runner,
         )
 
@@ -295,7 +327,7 @@ class HookBootstrapTests(unittest.TestCase):
         self.assertEqual(command[-2], "dev@example")
         self.assertEqual(
             command[-1],
-            "talktomeclaude hook install --provider codex",
+            "talktomejohnny hook install --provider codex",
         )
         self.assertEqual(runner.call_args.kwargs["timeout"], 15)
 
@@ -312,17 +344,37 @@ class HookBootstrapTests(unittest.TestCase):
 
         self.assertEqual(
             runner.call_args.args[0][-1],
-            "talktomeclaude hook install --provider codex",
+            "talktomejohnny hook install --provider codex",
         )
+
+    def test_both_provider_bootstrap_installs_each_isolated_user_hook(self) -> None:
+        completed = mock.Mock(returncode=0)
+        runner = mock.Mock(return_value=completed)
+
+        ensure_companion_hook(
+            "user@example-host",
+            provider="both",
+            runner=runner,
+        )
+
+        self.assertEqual(runner.call_count, 2)
+        self.assertEqual(
+            [call.args[0][-1] for call in runner.call_args_list],
+            [
+                "talktomejohnny hook install",
+                "talktomejohnny hook install --provider codex",
+            ],
+        )
+        self.assertEqual(_active_providers("both"), ("claude", "codex"))
 
     def test_remote_reply_stream_uses_the_installed_console_interpreter(self) -> None:
         self.assertEqual(
             _REMOTE_REPLY_COMMAND,
-            ("talktomeclaude", "hook", "stream"),
+            ("talktomejohnny", "hook", "stream"),
         )
         self.assertEqual(
             _remote_reply_command("codex"),
-            ("talktomeclaude", "hook", "stream", "--provider", "codex"),
+            ("talktomejohnny", "hook", "stream", "--provider", "codex"),
         )
 
     def test_codex_uses_isolated_local_durable_state(self) -> None:
@@ -342,6 +394,44 @@ class HookBootstrapTests(unittest.TestCase):
             _reply_inbox_path(root, "codex"),
             root / "reply-inbox-codex",
         )
+
+
+class CompositeReplyInboxTests(unittest.TestCase):
+    def test_status_is_connected_when_either_provider_is_live(self) -> None:
+        class FakeInbox:
+            def __init__(self) -> None:
+                self.status: Callable[[str], None] | None = None
+                self.stopped = False
+
+            def start(
+                self,
+                _on_reply: Callable[[object], bool],
+                on_status: Callable[[str], None],
+            ) -> None:
+                self.status = on_status
+
+            def stop(self) -> bool:
+                self.stopped = True
+                return True
+
+        claude = FakeInbox()
+        codex = FakeInbox()
+        statuses: list[str] = []
+        composite = CompositeReplyInbox({"claude": claude, "codex": codex})
+
+        composite.start(lambda _reply: True, statuses.append)
+        assert claude.status is not None
+        assert codex.status is not None
+        claude.status("disconnected")
+        codex.status("connected")
+        claude.status("connected")
+        codex.status("disconnected")
+        claude.status("disconnected")
+
+        self.assertEqual(statuses, ["connected", "disconnected"])
+        self.assertTrue(composite.stop())
+        self.assertTrue(claude.stopped)
+        self.assertTrue(codex.stopped)
 
 
 if __name__ == "__main__":

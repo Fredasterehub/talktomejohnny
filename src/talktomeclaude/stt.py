@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, TypeVar
 
+from talktomeclaude import config
+
 
 @dataclass(frozen=True)
 class STTTier:
@@ -52,10 +54,12 @@ class STTError(RuntimeError):
 
 
 def models_dir() -> Path:
-    override = os.environ.get("TALKTOMECLAUDE_STT_MODELS_DIR")
+    override = os.environ.get("TALKTOMEJOHNNY_STT_MODELS_DIR") or os.environ.get(
+        "TALKTOMECLAUDE_STT_MODELS_DIR"
+    )
     if override:
         return Path(override)
-    return Path.home() / ".cache" / "talktomeclaude" / "stt-models"
+    return config.preferred_cache_dir("stt-models")
 
 
 def _preload_cuda_libraries() -> None:

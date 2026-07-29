@@ -356,13 +356,13 @@ def test_settings_surface_focuses_only_when_opened_and_shows_exact_warning(
     assert surface.window.destroyed is True
 
 
-def test_settings_surface_defaults_unknown_provider_to_claude(tmp_path: Path) -> None:
+def test_settings_surface_defaults_unknown_provider_to_both(tmp_path: Path) -> None:
     surfaces, _tk, _voices, _dialogs, _messages, settings = _surfaces(tmp_path)
     settings["assistant_provider"] = "unknown"
 
     surface = surfaces.open_settings()
 
-    assert surface.variables["assistant_provider"].get() == "claude"
+    assert surface.variables["assistant_provider"].get() == "both"
 
 
 def test_voice_surface_uses_non_color_status_and_service_actions(
