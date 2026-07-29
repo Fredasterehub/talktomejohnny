@@ -329,7 +329,7 @@ class ClaudeHookManagerTests(unittest.TestCase):
             with mock.patch.object(hook_module.sys, "argv", [str(executable)]):
                 self.assertEqual(
                     hook_module.resolve_hook_executable({"PATH": ""}),
-                    str(executable.resolve()),
+                    os.path.abspath(executable),
                 )
         with tempfile.TemporaryDirectory() as temporary:
             scripts = Path(temporary)
@@ -476,8 +476,9 @@ class ClaudeHookManagerTests(unittest.TestCase):
                 launcher.symlink_to(target)
             except OSError as exc:
                 self.skipTest(f"symlink creation unavailable: {exc}")
+            previous_executable = str(launcher.resolve())
             session = hook_module._previous_quoted_command(
-                str(target),
+                previous_executable,
                 "hook",
                 "session",
                 "--provider",
@@ -486,7 +487,7 @@ class ClaudeHookManagerTests(unittest.TestCase):
                 hook_module.CLAUDE_SESSION_CONTROL_MARKER,
             )
             stop = hook_module._previous_quoted_command(
-                str(target),
+                previous_executable,
                 "hook",
                 "stop",
                 "--transport",

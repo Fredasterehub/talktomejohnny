@@ -75,7 +75,11 @@ class CloneModelFreeTests(unittest.TestCase):
             compat = sys.modules["perth.perth_net"]
             self.assertEqual(
                 compat.PREPACKAGED_MODELS_DIR,
-                str(Path(directory) / "perth" / "perth_net" / "pretrained"),
+                str(
+                    (
+                        Path(directory) / "perth" / "perth_net" / "pretrained"
+                    ).resolve()
+                ),
             )
             self.assertIs(
                 perth.PerthImplicitWatermarker,
