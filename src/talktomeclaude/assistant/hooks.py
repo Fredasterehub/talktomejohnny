@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 import threading
 from dataclasses import dataclass
 from enum import StrEnum
@@ -59,7 +60,12 @@ class HookInspection:
 def _quoted_command(executable: str, *arguments: str) -> str:
     if not isinstance(executable, str) or not executable.strip():
         raise ValueError("hook executable must be a non-empty string")
-    return shlex.join([executable, *arguments])
+    argv = [executable, *arguments]
+    return (
+        subprocess.list2cmdline(argv)
+        if os.name == "nt"
+        else shlex.join(argv)
+    )
 
 
 def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
@@ -75,7 +81,9 @@ def resolve_hook_executable(environment: dict[str, str] | None = None) -> str:
         resolved = shutil.which(candidate, path=active.get("PATH"))
         if resolved:
             return resolved
-    return "talktomeclaude"
+    raise HookSettingsError(
+        "assistant hook executable could not be resolved safely"
+    )
 
 
 def _stop_hook_entries(provider: str, executable: str) -> tuple[dict[str, str], ...]:
@@ -141,6 +149,47 @@ def _session_control_entries(
     }
 
 
+def _legacy_stop_entries(provider: str) -> dict[str, tuple[dict[str, str], ...]]:
+    if provider == "claude":
+        return {
+            "Stop": (
+                {
+                    "type": "command",
+                    "command": CLAUDE_STOP_HOOK_COMMAND,
+                },
+            )
+        }
+    if provider == "codex":
+        return {
+            "Stop": (
+                {
+                    "type": "command",
+                    "command": CODEX_STOP_HOOK_COMMAND,
+                },
+            )
+        }
+    raise ValueError(f"unsupported assistant provider {provider!r}")
+
+
+def _legacy_session_control_entries(
+    provider: str,
+) -> dict[str, tuple[dict[str, str], ...]]:
+    marker = (
+        CLAUDE_SESSION_CONTROL_MARKER
+        if provider == "claude"
+        else CODEX_SESSION_CONTROL_MARKER
+    )
+    event_name = "UserPromptExpansion" if provider == "claude" else "UserPromptSubmit"
+    entry = {
+        "type": "command",
+        "command": (
+            f"talktomeclaude hook session --provider {provider} "
+            f"--owner-marker {marker}"
+        ),
+    }
+    return {event_name: (entry,), "SessionEnd": (dict(entry),)}
+
+
 def _owned_entry(entry: dict[str, Any], owned: dict[str, str]) -> bool:
     return entry == owned
 
@@ -196,11 +245,17 @@ def _inspect_settings(
     *,
     markers: frozenset[str],
     owned_entries: dict[str, tuple[dict[str, str], ...]],
+    accepted_entries: dict[str, tuple[dict[str, str], ...]],
 ) -> HookInspection:
     entries = _command_entries(settings)
     expected_owned = {
         (event_name, json.dumps(entry, sort_keys=True, separators=(",", ":")))
         for event_name, event_entries in owned_entries.items()
+        for entry in event_entries
+    }
+    expected_accepted = {
+        (event_name, json.dumps(entry, sort_keys=True, separators=(",", ":")))
+        for event_name, event_entries in accepted_entries.items()
         for entry in event_entries
     }
     owned_count = sum(
@@ -219,7 +274,7 @@ def _inspect_settings(
                 event_name,
                 json.dumps(item, sort_keys=True, separators=(",", ":")),
             )
-            not in expected_owned
+            not in expected_accepted
         )
         for event_name, _rule, item in entries
     )
@@ -239,6 +294,7 @@ class _JsonHookManager:
         settings_path: str | os.PathLike[str],
         *,
         owned_entries: dict[str, tuple[dict[str, str], ...]],
+        legacy_entries: dict[str, tuple[dict[str, str], ...]] | None = None,
         markers: tuple[str, ...],
         purpose: str,
         max_conflict_attempts: int = 8,
@@ -251,6 +307,22 @@ class _JsonHookManager:
         self._owned_entries = {
             event_name: tuple(dict(entry) for entry in entries)
             for event_name, entries in owned_entries.items()
+        }
+        self._legacy_entries = {
+            event_name: tuple(dict(entry) for entry in entries)
+            for event_name, entries in (legacy_entries or {}).items()
+        }
+        self._accepted_entries = {
+            event_name: tuple(
+                dict(entry)
+                for entry in (
+                    self._legacy_entries.get(event_name, ())
+                    + self._owned_entries.get(event_name, ())
+                )
+            )
+            for event_name in (
+                self._legacy_entries.keys() | self._owned_entries.keys()
+            )
         }
         self._max_conflict_attempts = max_conflict_attempts
         self._phase_hook = phase_hook
@@ -349,6 +421,7 @@ class _JsonHookManager:
                 self._transaction.read(),
                 markers=self._markers,
                 owned_entries=self._owned_entries,
+                accepted_entries=self._accepted_entries,
             )
         except HookSettingsError:
             raise
@@ -364,6 +437,7 @@ class _JsonHookManager:
                 settings,
                 markers=self._markers,
                 owned_entries=self._owned_entries,
+                accepted_entries=self._accepted_entries,
             )
             if inspection.status is HookStatus.CONFLICT:
                 raise HookSettingsError(
@@ -374,14 +448,27 @@ class _JsonHookManager:
             hooks = settings.setdefault("hooks", {})
             if not isinstance(hooks, dict):
                 raise HookSettingsError("assistant hooks must be an object")
-            for event_name, entries in self._owned_entries.items():
+            for event_name, entries in self._accepted_entries.items():
                 rules = hooks.setdefault(event_name, [])
                 if not isinstance(rules, list):
                     raise HookSettingsError(
                         f"assistant {event_name} hooks must be a list"
                     )
-                for entry in entries:
-                    rules.append({"hooks": [dict(entry)]})
+                retained_rules: list[dict[str, Any]] = []
+                for rule in rules:
+                    commands = rule["hooks"]
+                    retained = [
+                        item
+                        for item in commands
+                        if not any(_owned_entry(item, entry) for entry in entries)
+                    ]
+                    if retained:
+                        replacement = dict(rule)
+                        replacement["hooks"] = retained
+                        retained_rules.append(replacement)
+                hooks[event_name] = retained_rules
+                for entry in self._owned_entries.get(event_name, ()):
+                    hooks[event_name].append({"hooks": [dict(entry)]})
             installed = HookInspection(
                 HookStatus.INSTALLED,
                 sum(len(entries) for entries in self._owned_entries.values()),
@@ -409,6 +496,7 @@ class _JsonHookManager:
                 settings,
                 markers=self._markers,
                 owned_entries=self._owned_entries,
+                accepted_entries=self._accepted_entries,
             )
             if inspection.status is HookStatus.CONFLICT:
                 raise HookSettingsError(
@@ -458,6 +546,7 @@ class _JsonHookManager:
                 updated,
                 markers=self._markers,
                 owned_entries=self._owned_entries,
+                accepted_entries=self._accepted_entries,
             )
         )
 
@@ -483,6 +572,7 @@ class SessionControlHookManager(_JsonHookManager):
         super().__init__(
             settings_path,
             owned_entries=_session_control_entries(provider, executable),
+            legacy_entries=_legacy_session_control_entries(provider),
             markers=(marker,),
             purpose=f"{provider}-session-control-hook-settings",
             max_conflict_attempts=max_conflict_attempts,
@@ -507,6 +597,10 @@ class ClaudeHookManager(_JsonHookManager):
                 "Stop": _stop_hook_entries("claude", executable),
                 **_session_control_entries("claude", executable),
             },
+            legacy_entries={
+                **_legacy_stop_entries("claude"),
+                **_legacy_session_control_entries("claude"),
+            },
             markers=(OWNED_HOOK_MARKER, CLAUDE_SESSION_CONTROL_MARKER),
             purpose="claude-hook-settings",
             max_conflict_attempts=max_conflict_attempts,
@@ -530,6 +624,10 @@ class CodexHookManager(_JsonHookManager):
             owned_entries={
                 "Stop": _stop_hook_entries("codex", executable),
                 **_session_control_entries("codex", executable),
+            },
+            legacy_entries={
+                **_legacy_stop_entries("codex"),
+                **_legacy_session_control_entries("codex"),
             },
             markers=(CODEX_OWNED_HOOK_MARKER, CODEX_SESSION_CONTROL_MARKER),
             purpose="codex-hook-settings",

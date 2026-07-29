@@ -57,8 +57,8 @@ def create_clone_voice(
     if not clone_available():
         status(
             "the cloning engine is not installed yet, so no test sample was rendered. "
-            "Run `talktomeclaude doctor` for the install recipe, then "
-            f'`talktomeclaude speak --voice {name} "..."`.'
+            "Run `talktomejohnny doctor` for the install recipe, then "
+            f'`talktomejohnny speak --voice {name} "..."`.'
         )
         return voice, None
 

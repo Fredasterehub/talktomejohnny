@@ -1,30 +1,33 @@
 # Security Policy
 
-## Supported Versions
+TalkToMeJohnny uses private vulnerability reporting for undisclosed security
+issues. Do not open a public issue for an unpatched vulnerability.
 
-Security fixes are targeted at the latest published `main` branch state and the
-most recent tagged release.
+## Reporting
 
-## Reporting A Vulnerability
+Use the repository's GitHub Security Advisory or other private maintainer
+channel. Include:
 
-Do not open a public issue for an unpatched security vulnerability.
+- affected version or commit
+- platform and environment details
+- clear reproduction steps
+- relevant logs or screenshots with secrets removed
+- whether the issue touches voices, caches, settings, hooks, or transport
 
-Report it privately through GitHub security reporting if that surface is
-available for the repository. If it is not, contact the repository owner
-directly through GitHub and include:
+## Safe Reporting Rules
 
-- A short description of the issue.
-- The affected version or commit.
-- Reproduction steps or a minimal proof of concept.
-- Any suggested mitigation, if you have one.
-
-You should receive an acknowledgement within 7 days.
+- Do not publish exploit details before a fix is available.
+- Do not include tokens, passwords, API keys, or private voice material.
+- If the issue affects migration, say whether legacy `talktomeclaude` data is
+  still reachable.
 
 ## Scope Notes
 
 - Secrets, tokens, and operator-specific local configuration must never be
   committed.
 - Voice references, caches, and migrated user settings are compatibility data,
-  not public test fixtures.
+  not public fixtures.
 - Hook and companion changes should fail closed when lifecycle ownership or
   attachment state is unclear.
+
+Maintainers should acknowledge a report within 7 days.

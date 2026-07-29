@@ -1,15 +1,21 @@
 # Changelog
 
-## 0.1.0 - 2026-07-29
+All notable changes to TalkToMeJohnny will be recorded here.
 
-- Rebranded the public package and primary CLI to `TalkToMeJohnny` /
-  `talktomejohnny`.
-- Kept `talktomeclaude` as a backward-compatible CLI and import alias.
-- Added deterministic exact-session activation for normal Claude Code and Codex
-  CLI sessions.
-- Added provider-local control skills for `/talktomejohnny` and
-  `$talktomejohnny`.
-- Hardened attachment/lease recovery so stale or offline companions fail closed.
-- Added non-destructive migration support for legacy config, voice registry,
-  voice references, and cache paths.
-- Sanitized public fixtures and examples for provider-neutral publication.
+## Unreleased
+
+- Documentation and governance cleanup for the public TalkToMeJohnny rename.
+- Provider-neutral activation guidance for normal `claude` and normal `codex` sessions.
+- Backward-compatible migration notes for legacy `talktomeclaude` names, caches, settings, and voice assets.
+
+## 0.1.0
+
+Initial public release of TalkToMeJohnny.
+
+### Highlights
+
+- Public rename to `TalkToMeJohnny` / `talktomejohnny`.
+- Exact-session activation model for Claude Code and Codex CLI.
+- One global attached session with isolated provider streams.
+- Fail-closed recovery when the companion or hook lease is stale or offline.
+- Compatibility aliases for legacy CLI, import, config, cache, and voice registry names.

@@ -93,7 +93,7 @@ def _load_model():
     _ensure_hf_home()
     if not clone_available():
         raise CloneError(
-            "the voice-cloning engine is not installed; run `talktomeclaude doctor` "
+            "the voice-cloning engine is not installed; run `talktomejohnny doctor` "
             "for the exact install recipe for this machine"
         )
     from chatterbox.tts import ChatterboxTTS

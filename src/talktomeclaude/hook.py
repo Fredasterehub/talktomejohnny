@@ -23,7 +23,9 @@ MAX_STOP_INPUT_BYTES = 8 * 1024 * 1024
 
 
 def _transport_root(environment: Mapping[str, str]) -> Path:
-    override = environment.get("TALKTOMECLAUDE_REPLY_SPOOL")
+    override = environment.get(
+        "TALKTOMEJOHNNY_REPLY_SPOOL"
+    ) or environment.get("TALKTOMECLAUDE_REPLY_SPOOL")
     if override:
         return Path(override).expanduser()
     from talktomeclaude.config import config_dir
@@ -32,7 +34,9 @@ def _transport_root(environment: Mapping[str, str]) -> Path:
 
 
 def _fault_path(environment: Mapping[str, str]) -> Path:
-    override = environment.get("TALKTOMECLAUDE_CONFIG_DIR")
+    override = environment.get(
+        "TALKTOMEJOHNNY_CONFIG_DIR"
+    ) or environment.get("TALKTOMECLAUDE_CONFIG_DIR")
     if override:
         return Path(override).expanduser() / "hook-transport-status.json"
     from talktomeclaude.config import config_dir

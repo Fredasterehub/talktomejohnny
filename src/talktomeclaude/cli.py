@@ -77,6 +77,7 @@ def codex(codex_args: tuple[str, ...]) -> None:
     import subprocess
 
     environment = os.environ.copy()
+    environment["TALKTOMEJOHNNY_CODEX_ACTIVE"] = "1"
     environment["TALKTOMECLAUDE_CODEX_ACTIVE"] = "1"
     executable = shutil.which("codex")
     if executable is None:
@@ -851,6 +852,7 @@ def hook_status(settings_path: Path | None, provider: str) -> None:
         ClaudeHookManager,
         CodexHookManager,
         HookSettingsError,
+        resolve_hook_executable,
     )
 
     target = settings_path or (
@@ -858,7 +860,12 @@ def hook_status(settings_path: Path | None, provider: str) -> None:
         if provider == "claude"
         else Path.home() / ".codex" / "hooks.json"
     )
-    manager = ClaudeHookManager(target) if provider == "claude" else CodexHookManager(target)
+    executable = resolve_hook_executable()
+    manager = (
+        ClaudeHookManager(target, executable=executable)
+        if provider == "claude"
+        else CodexHookManager(target, executable=executable)
+    )
     try:
         inspection = manager.inspect()
     except HookSettingsError as exc:
@@ -1021,9 +1028,10 @@ def stop(
                     attachment_state_path(os.environ)
                 ),
             )
-        if provider == "codex" and os.environ.get(
-            "TALKTOMECLAUDE_CODEX_ACTIVE"
-        ) == "1":
+        if provider == "codex" and (
+            os.environ.get("TALKTOMEJOHNNY_CODEX_ACTIVE") == "1"
+            or os.environ.get("TALKTOMECLAUDE_CODEX_ACTIVE") == "1"
+        ):
             active = True
         if event is not None and owner_marker == expected_marker and active:
             try:
@@ -1055,8 +1063,14 @@ def stop(
                         transport_codex_stop_event(
                             event,
                             spool_root=(
-                                Path(os.environ["TALKTOMECLAUDE_REPLY_SPOOL"])
-                                if os.environ.get("TALKTOMECLAUDE_REPLY_SPOOL")
+                                Path(
+                                    os.environ.get("TALKTOMEJOHNNY_REPLY_SPOOL")
+                                    or os.environ["TALKTOMECLAUDE_REPLY_SPOOL"]
+                                )
+                                if (
+                                    os.environ.get("TALKTOMEJOHNNY_REPLY_SPOOL")
+                                    or os.environ.get("TALKTOMECLAUDE_REPLY_SPOOL")
+                                )
                                 else config.config_dir() / "reply-spool-codex"
                             ),
                         )

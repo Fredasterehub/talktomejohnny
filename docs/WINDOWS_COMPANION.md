@@ -184,4 +184,3 @@ running Python processes do not reload edited modules.
 Do not treat the Windows companion as the no-argument default until the full
 automated and physical Windows gates are complete. macOS and Linux can host the
 assistant CLI and hooks, but the desktop companion itself is Windows 11 only.
-

@@ -47,7 +47,7 @@ class ConfigSettingsTests(unittest.TestCase):
 
     def test_wake_word_defaults_off_with_default_phrase(self) -> None:
         self.assertFalse(config.wake_word_enabled())
-        self.assertEqual(config.wake_phrase(), "yo claude")
+        self.assertEqual(config.wake_phrase(), "hey johnny")
 
     def test_wake_word_toggle_round_trips(self) -> None:
         config.set_wake_word(True)

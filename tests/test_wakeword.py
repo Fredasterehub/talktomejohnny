@@ -13,7 +13,7 @@ class WakeWordModuleTests(unittest.TestCase):
     def test_default_wake_phrase(self) -> None:
         from talktomeclaude.wakeword import DEFAULT_WAKE_PHRASE
 
-        self.assertEqual(DEFAULT_WAKE_PHRASE, "yo claude")
+        self.assertEqual(DEFAULT_WAKE_PHRASE, "hey johnny")
 
     def test_module_imports_without_the_optional_engine_installed(self) -> None:
         # Simulate a machine that never installed the optional wake-word
@@ -24,7 +24,7 @@ class WakeWordModuleTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"openwakeword": None}):
             module = importlib.import_module("talktomeclaude.wakeword")
             importlib.reload(module)
-            self.assertEqual(module.DEFAULT_WAKE_PHRASE, "yo claude")
+            self.assertEqual(module.DEFAULT_WAKE_PHRASE, "hey johnny")
 
     def test_corrupt_model_is_normalized_to_wakeword_error(self) -> None:
         from talktomeclaude import wakeword

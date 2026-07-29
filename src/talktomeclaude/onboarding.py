@@ -103,7 +103,7 @@ class OnboardingScreen(Screen[bool]):
             yield Static("Voice cloning is feasible here — the install recipe is ready")
             yield OptionList(
                 "Show the install recipe now",
-                "Later (`talktomeclaude doctor` prints it any time)",
+                "Later (`talktomejohnny doctor` prints it any time)",
                 id="ob-clone-recipe",
             )
         elif step == "clone-recipe-text":
@@ -180,7 +180,7 @@ class OnboardingScreen(Screen[bool]):
             yield Static("All set")
             yield Static(
                 "Every choice is already saved. Re-run this any time with "
-                "`talktomeclaude setup`."
+                "`talktomejohnny setup`."
             )
             yield OptionList("Finish", id="ob-finish")
         yield Static(_HINT_EXTRA.get(step, "") + _HINT)
@@ -196,9 +196,9 @@ class OnboardingScreen(Screen[bool]):
                 if recommendation.clone_feasible
                 else "voice cloning: not recommended on this machine"
             )
-            return f"{cloning}. Run `talktomeclaude doctor` for the full report."
+            return f"{cloning}. Run `talktomejohnny doctor` for the full report."
         except Exception:
-            return "Hardware detection unavailable; run `talktomeclaude doctor` later."
+            return "Hardware detection unavailable; run `talktomejohnny doctor` later."
 
     def _clone_ok(self) -> bool:
         if self._clone_feasible is None:
@@ -216,7 +216,7 @@ class OnboardingScreen(Screen[bool]):
 
             recipe = advisor.clone_install_recipe()
         except Exception:
-            return "Run `talktomeclaude doctor` for the install recipe."
+            return "Run `talktomejohnny doctor` for the install recipe."
         return "\n".join(f"$ {command}" for command in recipe)
 
     def on_mount(self) -> None:

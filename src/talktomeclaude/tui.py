@@ -1,4 +1,4 @@
-"""Textual dashboard for the local voice loop — the 'Talk To Me, Claude' poster,
+"""Textual dashboard for the local TalkToMeJohnny voice loop,
 rendered in the terminal (near-black ground, amber accent, cream ink)."""
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ _PHASE_LABELS = {
     "starting": "STARTING",
     "recording": "RECORDING",
     "transcribing": "TRANSCRIBING",
-    "thinking": "CLAUDE WORKING",
+    "thinking": "ASSISTANT WORKING",
     "speaking": "SPEAKING",
     "error": "NEEDS ATTENTION",
 }
@@ -62,8 +62,8 @@ _PHASE_NOTICES = {
     "starting": "Loading the local speech model",
     "recording": "Listening to your microphone",
     "transcribing": "Turning speech into text locally",
-    "thinking": "Claude is working in the selected project",
-    "speaking": "Playing Claude's reply",
+    "thinking": "The assistant is working in the selected project",
+    "speaking": "Playing the assistant reply",
 }
 
 # ── brand ────────────────────────────────────────────────────────────────────
@@ -114,9 +114,9 @@ def _header_full() -> Text:
     text.append(_WAVE, style=f"bold {_AMBER}")
     text.append("   ")
     text.append("TALK TO ME, ", style=f"bold {_CREAM}")
-    text.append("CLAUDE", style=f"bold {_AMBER}")
+    text.append("JOHNNY", style=f"bold {_AMBER}")
     text.append("\n")
-    text.append("local voice for Claude Code", style=_GRAY)
+    text.append("local voice companion", style=_GRAY)
     text.append("   ·   it's a long road", style=f"italic {_OCHRE}")
     return text
 
@@ -125,8 +125,8 @@ def _header_compact() -> Text:
     text = Text(no_wrap=True)
     text.append("▂▄▆ ", style=f"bold {_AMBER}")
     text.append("TALK TO ME, ", style=f"bold {_CREAM}")
-    text.append("CLAUDE", style=f"bold {_AMBER}")
-    text.append("  ·  local voice for Claude Code", style=_GRAY)
+    text.append("JOHNNY", style=f"bold {_AMBER}")
+    text.append("  ·  local voice companion", style=_GRAY)
     return text
 
 
@@ -518,7 +518,7 @@ class TalkToMeApp(App[None]):
     """The interactive launcher and live voice-session dashboard."""
 
     CSS = _TTMJ_CSS
-    TITLE = "Talk To Me, Claude"
+    TITLE = "TalkToMeJohnny"
 
     BINDINGS = [
         Binding("space", "talk", "Talk"),
@@ -588,7 +588,10 @@ class TalkToMeApp(App[None]):
     def on_mount(self) -> None:
         self.register_theme(TTMJ_THEME)
         self.theme = "ttmj"
-        if os.environ.get("TALKTOMECLAUDE_REDUCED_MOTION") == "1":
+        if (
+            os.environ.get("TALKTOMEJOHNNY_REDUCED_MOTION") == "1"
+            or os.environ.get("TALKTOMECLAUDE_REDUCED_MOTION") == "1"
+        ):
             self.animation_level = "none"
         self.mode = config.recording_mode()
         self.voice_enabled = config.voice_assist_enabled()
@@ -601,7 +604,7 @@ class TalkToMeApp(App[None]):
         self.query_one("#dialogue").border_title = "DIALOGUE"
         session = self.query_one("#session", RichLog)
         session.border_title = "SESSION"
-        session.write(Text("Claude's live activity — tools, edits, thinking — appears here.",
+        session.write(Text("Assistant activity — tools, edits, thinking — appears here.",
                            style=_GRAY))
         self._apply_compact(self.size.width, self.size.height)
         self._ui_ready = True
@@ -871,7 +874,7 @@ class TalkToMeApp(App[None]):
 
     def on_progress(self, message: Progress) -> None:
         elapsed = max(0, int(time.monotonic() - self._thinking_started))
-        self.notice = f"Claude is working ({elapsed}s)"
+        self.notice = f"Assistant is working ({elapsed}s)"
 
     def on_mirror(self, message: Mirror) -> None:
         log = self.query_one("#session", RichLog)

@@ -6,7 +6,7 @@ most accurate model that stays conversationally fluid, quantized to int8.
 One code path, switched only through ``device``/``compute_type``.
 
 Fidelity (directive D-2): accuracy beats speed inside each tier — full beam
-search, hotword biasing so developer vocabulary like "Claude" survives, and
+search, hotword biasing so assistant and product names survive, and
 never a silent quality cut: any fallback from the detected tier is reported
 through the status callback so the operator can see the active tier.
 """
@@ -41,7 +41,7 @@ class TranscriptSegment:
 GPU_TIER = STTTier(model="large-v3", device="cuda", compute_type="float16")
 CPU_TIER = STTTier(model="small.en", device="cpu", compute_type="int8")
 
-HOTWORDS = "Claude, Claude Code"
+HOTWORDS = "Johnny, TalkToMeJohnny, Claude Code, Codex"
 
 _CUDA_DLL_DIRECTORY_HANDLES: list[object] = []
 _CUDA_DLL_DIRECTORIES: set[str] = set()

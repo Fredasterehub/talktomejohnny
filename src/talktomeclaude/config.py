@@ -1,7 +1,8 @@
 """Persistent configuration shared by the CLI and assistant lifecycle hooks.
 
 Settings live in a single JSON file at one stable location — an explicit
-``TALKTOMECLAUDE_CONFIG_DIR`` override, else the user's XDG config directory
+``TALKTOMEJOHNNY_CONFIG_DIR`` override (with the legacy alias still accepted),
+else the user's XDG config directory
 — so a setting written from a normal shell is exactly the state the installed
 hook reads. ``CLAUDE_PLUGIN_DATA`` is deliberately ignored: Claude Code hands
 it to the hook while the shell CLI never sees it, and honoring it would split
@@ -27,7 +28,7 @@ _LEGACY_MIGRATION_MARKER = ".legacy-state-migration.json"
 RECORDING_MODES = ("always-on", "push-to-talk", "push-toggle")
 DEFAULT_RECORDING_MODE = "push-to-talk"
 DEFAULT_COMPANION_RECORDING_MODE = "push-toggle"
-DEFAULT_WAKE_PHRASE = "yo claude"
+DEFAULT_WAKE_PHRASE = "hey johnny"
 ASSISTANT_PROVIDERS = ("both", "claude", "codex")
 DEFAULT_ASSISTANT_PROVIDER = "both"
 CLAUDE_PERMISSIONS = ("off", "skip", "acceptEdits", "bypassPermissions")
@@ -393,7 +394,7 @@ def set_remote_cwd(value: str | None) -> None:
 
 
 def barge_in_enabled() -> bool:
-    """Whether the listen loop may be interrupted while Claude is still
+    """Whether the listen loop may be interrupted while the assistant is still
     speaking. Off by default: half-duplex is safe on every machine, and
     full-duplex barge-in is opt-in and gated on capable audio hardware."""
     return load().get("barge-in", "off") == "on"

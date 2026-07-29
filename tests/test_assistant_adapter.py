@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import talktomeclaude.assistant.hooks as hook_module
 from talktomeclaude.assistant import (
     AssistantAdapter,
     AssistantEventCode,
@@ -21,6 +22,7 @@ from talktomeclaude.assistant import (
     DirectorLaunchGuard,
     HookStatus,
     OWNED_HOOK_MARKER,
+    SessionControlHookManager,
     SuppressionRegistry,
     canonical_reply_digest,
 )
@@ -237,6 +239,99 @@ class ClaudeHookManagerTests(unittest.TestCase):
         self.assertEqual(document["theme"], "dark")
         self.assertEqual(document["external-unrelated"], {"preserved": True})
         self.assertEqual(manager.inspect().owned_entries, 3)
+
+    def test_exact_legacy_entries_are_migrated_to_the_resolved_executable(self) -> None:
+        legacy = {
+            "hooks": {
+                "Stop": [{"hooks": [{"type": "command", "command": CLAUDE_STOP_HOOK_COMMAND}]}],
+                "UserPromptExpansion": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": (
+                                    "talktomeclaude hook session --provider claude "
+                                    f"--owner-marker {hook_module.CLAUDE_SESSION_CONTROL_MARKER}"
+                                ),
+                            }
+                        ]
+                    }
+                ],
+                "SessionEnd": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": (
+                                    "talktomeclaude hook session --provider claude "
+                                    f"--owner-marker {hook_module.CLAUDE_SESSION_CONTROL_MARKER}"
+                                ),
+                            }
+                        ]
+                    }
+                ],
+            }
+        }
+        self.path.write_text(json.dumps(legacy), encoding="utf-8")
+        executable = r"C:\Program Files\Talk To Me\talktomejohnny.exe"
+
+        installed = ClaudeHookManager(self.path, executable=executable).install()
+
+        self.assertEqual(installed.status, HookStatus.INSTALLED)
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        expected = subprocess.list2cmdline(
+            [
+                executable,
+                "hook",
+                "session",
+                "--provider",
+                "claude",
+                "--owner-marker",
+                hook_module.CLAUDE_SESSION_CONTROL_MARKER,
+            ]
+        )
+        self.assertEqual(
+            document["hooks"]["UserPromptExpansion"][0]["hooks"][0]["command"],
+            expected,
+        )
+        self.assertNotIn("talktomeclaude hook session", json.dumps(document))
+
+    def test_resolve_hook_executable_and_session_manager_quote_safely(self) -> None:
+        with self.assertRaisesRegex(HookSettingsError, "could not be resolved safely"):
+            hook_module.resolve_hook_executable({"PATH": ""})
+
+        windows_path = r"C:\Program Files\Talk To Me\talktomejohnny.exe"
+        manager = SessionControlHookManager(
+            self.path,
+            provider="codex",
+            executable=windows_path,
+        )
+        installed = manager.install()
+        self.assertEqual(installed.status, HookStatus.INSTALLED)
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            document["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
+            subprocess.list2cmdline(
+                [
+                    windows_path,
+                    "hook",
+                    "session",
+                    "--provider",
+                    "codex",
+                    "--owner-marker",
+                    hook_module.CODEX_SESSION_CONTROL_MARKER,
+                ]
+            ),
+        )
+        with mock.patch.object(hook_module.os, "name", "posix"):
+            self.assertEqual(
+                hook_module._quoted_command(
+                    "/opt/Talk To Me/talktomejohnny",
+                    "hook",
+                    "session",
+                ),
+                "'/opt/Talk To Me/talktomejohnny' hook session",
+            )
 
     def test_external_conflict_retries_are_bounded_without_losing_latest_file(
         self,

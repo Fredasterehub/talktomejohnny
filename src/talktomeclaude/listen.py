@@ -1016,7 +1016,7 @@ def _ssh_base(remote: str) -> list[str]:
     if not _is_windows():
         command += [
             "-o", "ControlMaster=auto",
-            "-o", "ControlPath=~/.ssh/cm-talktomeclaude-%r@%h:%p",
+            "-o", "ControlPath=~/.ssh/cm-talktomejohnny-%r@%h:%p",
             "-o", "ControlPersist=600",
         ]
     return command + [remote]

@@ -1,21 +1,30 @@
-# Code Of Conduct
+# Code of Conduct
 
-This project expects respectful, direct, and constructive collaboration.
+TalkToMeJohnny is intended to be a professional, collaborative project. Use the
+repository, issues, and review comments to improve the work, not the person
+behind it.
 
 ## Expected Behavior
 
-- Be precise and professional.
-- Critique code and ideas, not people.
-- Prefer evidence over speculation.
-- Respect user privacy, operator data, and security boundaries.
+- Be respectful and direct.
+- Stay on topic.
+- Give feedback about code, docs, and tests rather than personalities.
+- Assume good faith until the evidence says otherwise.
 
 ## Unacceptable Behavior
 
-- Harassment or abusive language.
-- Publishing private data, credentials, or operator-specific configuration.
-- Deliberate disruption of discussions, reviews, or issue triage.
+- Harassment, discrimination, or personal attacks.
+- Doxxing, threats, or intimidation.
+- Deliberate sabotage, trolling, or repeated bad-faith disruption.
+- Sharing secrets, credentials, or private user data.
+
+## Reporting
+
+Report conduct issues to the repository maintainers through the project
+channels. If a situation involves immediate safety risk, contact local
+emergency services first.
 
 ## Enforcement
 
-The repository owner may remove comments, close discussions, or block
-participation for behavior that violates this document.
+Maintainers may remove comments, close threads, restrict access, or take other
+actions needed to keep the project usable.

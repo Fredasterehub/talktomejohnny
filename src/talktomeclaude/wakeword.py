@@ -1,7 +1,7 @@
 """Optional, local wake-word detection.
 
 The detection dependencies are deliberately imported only when detection is
-started, so configuring talktomeclaude never requires a wake-word engine.
+started, so configuring TalkToMeJohnny never requires a wake-word engine.
 """
 
 from __future__ import annotations
