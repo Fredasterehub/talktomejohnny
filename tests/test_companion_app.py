@@ -279,7 +279,7 @@ class HookBootstrapTests(unittest.TestCase):
             wire.count("talktomeclaude.windows-companion.codex.v1"), 1
         )
 
-    def test_remote_codex_hook_is_scoped_to_configured_project(self) -> None:
+    def test_remote_codex_hook_uses_user_level_scope(self) -> None:
         completed = mock.Mock(returncode=0)
         runner = mock.Mock(return_value=completed)
 
@@ -295,23 +295,25 @@ class HookBootstrapTests(unittest.TestCase):
         self.assertEqual(command[-2], "dev@example")
         self.assertEqual(
             command[-1],
-            "talktomeclaude hook install --provider codex --settings "
-            "/DEV/ghostundo/.codex/hooks.json",
+            "talktomeclaude hook install --provider codex",
         )
         self.assertEqual(runner.call_args.kwargs["timeout"], 15)
 
-    def test_remote_codex_hook_requires_a_configured_project(self) -> None:
-        runner = mock.Mock()
+    def test_remote_codex_hook_does_not_require_a_configured_project(self) -> None:
+        completed = mock.Mock(returncode=0)
+        runner = mock.Mock(return_value=completed)
 
-        with self.assertRaisesRegex(CompanionStartupError, "remote-cwd"):
-            ensure_companion_hook(
-                "dev@example",
-                provider="codex",
-                remote_cwd=None,
-                runner=runner,
-            )
+        ensure_companion_hook(
+            "dev@example",
+            provider="codex",
+            remote_cwd=None,
+            runner=runner,
+        )
 
-        runner.assert_not_called()
+        self.assertEqual(
+            runner.call_args.args[0][-1],
+            "talktomeclaude hook install --provider codex",
+        )
 
     def test_remote_reply_stream_uses_the_installed_console_interpreter(self) -> None:
         self.assertEqual(

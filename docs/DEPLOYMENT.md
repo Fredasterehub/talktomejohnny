@@ -17,9 +17,11 @@ recognition, and Chatterbox cloned voices.
   passed to `claude -p` through a safely quoted login shell.
 - Remote companion mode requires this same TalkToMeClaude checkout on the Claude
   host for its owned Stop hook and `talktomeclaude hook stream` helper. The Codex
-  provider uses its own additive Stop hook at `remote-cwd/.codex/hooks.json`, must be
-  trusted once with `/hooks` in Codex, and activates only when launched through the
-  `talktomeclaude codex` wrapper. Codex keeps both its remote spool and Windows
+  provider uses its own additive user-level Stop hook at `~/.codex/hooks.json`, must
+  be trusted once with `/hooks` in Codex, and activates only when launched through
+  the `talktomeclaude codex` wrapper. The user-level location lets that wrapper start
+  in any working directory; the child-only activation marker keeps ordinary `codex`
+  sessions out of reply transport. Codex keeps both its remote spool and Windows
   durable inbox separate from Claude state. Neither provider installs or runs the
   local audio/Torch/TTS stack there. Legacy `listen` remote mode does not require
   this helper.
@@ -62,21 +64,24 @@ talktomeclaude config set assistant-provider claude
 ```
 
 Use the Codex wrapper only for attached sessions that should stream through the
-project-scoped Codex hook:
+user-level activation-gated Codex hook:
 
 ```powershell
 talktomeclaude config set assistant-provider codex
 talktomeclaude companion
 ```
 
-Then, from the configured project on the assistant host, launch the attached CLI:
+Then, from any desired working directory on the assistant host, launch the attached
+CLI:
 
 ```text
+cd /path/to/your/project
 talktomeclaude codex
 ```
 
-If the remote Codex hook has not been trusted yet, open Codex and accept the project
-hook via `/hooks` before relying on streamed replies.
+If the remote Codex hook has not been trusted yet, open `/hooks` in Codex and accept
+the TalkToMeClaude user hook before relying on streamed replies. Its persisted trust
+is reused across working directories until that exact hook definition changes.
 
 ## Windows Companion Stage A
 

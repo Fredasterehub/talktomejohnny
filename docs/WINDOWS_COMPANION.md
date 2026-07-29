@@ -42,20 +42,29 @@ the older `listen` command can still drive a remote that has only Claude Code.
 ## Assistant provider
 
 The default assistant provider remains Claude. To use the authorized Codex CLI
-provider, select Codex, restart the companion, then launch the remote Codex session
-through the attachment wrapper from the configured project:
+provider, select Codex and restart the companion on Windows:
 
 ```powershell
 talktomeclaude config set assistant-provider codex
 talktomeclaude companion
+```
+
+Then, on the assistant host, change to whichever directory you want Codex to work in
+and launch the attached session:
+
+```text
+cd /path/to/your/project
 talktomeclaude codex
 ```
 
-The Codex Stop hook is additive and project-scoped under
-`remote-cwd/.codex/hooks.json`. Trust that hook once from Codex with `/hooks`
-before relying on streamed replies. Codex also uses separate remote spool and local
-inbox roots, so switching providers cannot replay a historical Claude queue. To roll
-back, set the provider back to Claude and relaunch the normal path:
+The Codex Stop hook is additive in the assistant host's user-level
+`~/.codex/hooks.json`. Trust it once from Codex with `/hooks`; that one trust applies
+when an attached session starts in another directory. Only `talktomeclaude codex`
+sets the child activation marker, so ordinary `codex` sessions remain outside reply
+transport even though they can see the user-level hook. Codex also uses separate
+remote spool and local inbox roots, so switching providers cannot replay a historical
+Claude queue. To roll back, set the provider back to Claude and relaunch the normal
+path:
 
 ```powershell
 talktomeclaude config set assistant-provider claude

@@ -7,7 +7,7 @@ import shlex
 import threading
 import time
 from collections.abc import Callable
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Protocol
 
 from talktomeclaude import config
@@ -122,7 +122,12 @@ def ensure_companion_hook(
     local_settings_path: str | Path | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
-    """Idempotently install only the selected provider's owned Stop hook."""
+    """Idempotently install only the selected provider's owned Stop hook.
+
+    Codex uses its user hook layer so an explicitly attached session can start in
+    any directory. The child-only activation marker still excludes plain Codex
+    sessions from reply transport.
+    """
 
     if provider not in config.ASSISTANT_PROVIDERS:
         raise CompanionStartupError(f"unsupported assistant provider {provider!r}")
@@ -130,13 +135,7 @@ def ensure_companion_hook(
     if remote:
         remote_install = ["talktomeclaude", "hook", "install"]
         if provider == "codex":
-            if not remote_cwd:
-                raise CompanionStartupError(
-                    "remote Codex companion mode requires a configured remote-cwd"
-                )
             remote_install.extend(["--provider", "codex"])
-            hooks_path = PurePosixPath(remote_cwd) / ".codex" / "hooks.json"
-            remote_install.extend(["--settings", str(hooks_path)])
         command = [
             "ssh",
             "-T",
