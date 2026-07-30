@@ -186,6 +186,53 @@ class AtomicStorageTests(unittest.TestCase):
         transaction.write({"second": 2})
         self.assertEqual(json.loads(self.path.read_text(encoding="utf-8")), {"second": 2})
 
+    def test_transient_windows_replace_denial_is_retried_without_losing_data(self) -> None:
+        real_replace = os.replace
+        attempts = 0
+
+        def transient_replace(source: Path, destination: Path) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise PermissionError(13, "transient scanner lock")
+            real_replace(source, destination)
+
+        with (
+            mock.patch("talktomeclaude.storage.atomic._IS_WINDOWS", True),
+            mock.patch(
+                "talktomeclaude.storage.atomic.os.replace",
+                side_effect=transient_replace,
+            ),
+        ):
+            AtomicJsonTransaction(self.path).write({"saved": True})
+
+        self.assertEqual(attempts, 3)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8")), {"saved": True})
+
+    def test_cleanup_denial_does_not_mask_exhausted_replace_failure(self) -> None:
+        replace_denied = PermissionError(13, "replace denied")
+        cleanup_denied = PermissionError(13, "temp cleanup denied")
+
+        with (
+            mock.patch("talktomeclaude.storage.atomic._IS_WINDOWS", True),
+            mock.patch(
+                "talktomeclaude.storage.atomic.os.replace",
+                side_effect=replace_denied,
+            ),
+            mock.patch(
+                "talktomeclaude.storage.atomic.time.monotonic",
+                side_effect=(0.0, 1.0),
+            ),
+            mock.patch("talktomeclaude.storage.atomic.time.sleep"),
+            mock.patch.object(
+                type(self.path),
+                "unlink",
+                side_effect=cleanup_denied,
+            ),
+        ):
+            with self.assertRaisesRegex(PermissionError, "replace denied"):
+                AtomicJsonTransaction(self.path).write({"saved": True})
+
     def test_missing_config_read_does_not_create_or_version_a_file(self) -> None:
         self.assertEqual(ConfigStore(self.path).load(), {})
         self.assertFalse(self.path.exists())

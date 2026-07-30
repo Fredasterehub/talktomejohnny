@@ -618,6 +618,7 @@ def config_set(key: str, value: str) -> None:
 
     Known keys: recording-mode (always-on, push-to-talk, push-toggle),
     control-keybinding (for the global companion hotkey, e.g. ctrl+alt+space),
+    output-volume (0-100),
     voice-assist (on, off), assistant-auto-submit (on, off),
     assistant-provider (both, claude, codex),
     remote (user@host, or "local"/"none" to clear),
@@ -665,6 +666,11 @@ def config_set(key: str, value: str) -> None:
         settings.set_remote_cwd(
             None if value.lower() in ("", "home", "none", "off") else value
         )
+    elif key == "output-volume":
+        try:
+            settings.set_output_volume(int(value))
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
     elif key == "barge-in":
         if value not in ("on", "off"):
             raise click.ClickException(
@@ -709,7 +715,8 @@ def config_set(key: str, value: str) -> None:
     else:
         raise click.ClickException(
             f"unknown setting {key!r}: expected recording-mode, voice-assist, "
-            "assistant-auto-submit, control-keybinding, assistant-provider, remote, "
+            "assistant-auto-submit, output-volume, control-keybinding, assistant-provider, "
+            "remote, "
             "remote-cwd, barge-in, claude-permissions, wake-word, wake-phrase, "
             "wake-model, default-voice, stt-device, command-namespace-policy, "
             "or command-namespace-allowlist"
@@ -737,6 +744,8 @@ def config_get(key: str) -> None:
         click.echo(settings.remote() or "local")
     elif key == "remote-cwd":
         click.echo(settings.remote_cwd() or "home")
+    elif key == "output-volume":
+        click.echo(settings.output_volume())
     elif key == "barge-in":
         click.echo("on" if settings.barge_in_enabled() else "off")
     elif key == "claude-permissions":
@@ -758,7 +767,8 @@ def config_get(key: str) -> None:
     else:
         raise click.ClickException(
             f"unknown setting {key!r}: expected recording-mode, voice-assist, "
-            "assistant-auto-submit, control-keybinding, assistant-provider, remote, "
+            "assistant-auto-submit, output-volume, control-keybinding, assistant-provider, "
+            "remote, "
             "remote-cwd, barge-in, claude-permissions, wake-word, wake-phrase, "
             "wake-model, default-voice, stt-device, command-namespace-policy, "
             "or command-namespace-allowlist"

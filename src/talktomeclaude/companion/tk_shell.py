@@ -6,6 +6,7 @@ import ctypes
 import importlib
 import queue
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any, Protocol
 
 from talktomeclaude.companion.contracts import (
@@ -13,6 +14,7 @@ from talktomeclaude.companion.contracts import (
     CompanionSnapshot,
     IntentKind,
 )
+from talktomeclaude.companion.tk_matrix import MatrixDeck, matrix_visual, microphone_label
 from talktomeclaude.companion.viewmodel import to_view_model
 
 
@@ -159,13 +161,16 @@ class TkCompanionShell:
         self.root = self._tk.Tk()
         self.root.withdraw()
         self.root.title("TalkToMeJohnny")
-        self.root.geometry("360x190")
+        self.root.geometry("520x326")
         self.root.resizable(False, False)
+        self.root.configure(background="#010403")
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
         self._cue = self._tk.StringVar(value="")
         self._status = self._tk.StringVar(value="")
         self._detail = self._tk.StringVar(value="")
-        self._mute_text = self._tk.StringVar(value="Mute output")
+        self._mute_text = self._tk.StringVar(value="MUTE")
+        self._microphone_level = self._tk.StringVar(value="")
+        self._output_status = self._tk.StringVar(value="")
         self.buttons: dict[IntentKind, Any] = {}
         self._build()
         self._apply_snapshot(initial_snapshot)
@@ -175,26 +180,48 @@ class TkCompanionShell:
         self._schedule_updates()
 
     def _build(self) -> None:
-        frame = self._tk.Frame(self.root, padx=8, pady=8)
+        frame = self._tk.Frame(self.root, padx=0, pady=0, background="#010403")
         frame.grid(row=0, column=0, sticky="nsew")
-        self._tk.Label(frame, textvariable=self._cue, anchor="w").grid(
-            row=0, column=0, columnspan=4, sticky="ew"
+        self._canvas = self._tk.Canvas(
+            frame,
+            width=MatrixDeck.WIDTH,
+            height=MatrixDeck.HEIGHT,
+            background="#010403",
+            highlightthickness=0,
+            borderwidth=0,
         )
-        self._tk.Label(frame, textvariable=self._status, anchor="w").grid(
-            row=1, column=0, columnspan=4, sticky="ew"
+        self._canvas.grid(row=0, column=0, columnspan=8, sticky="nsew")
+        self._deck = MatrixDeck(self._canvas)
+        semantic_labels = (
+            (self._cue, 252, 16, 242, 22, ("Bahnschrift SemiBold", 13, "bold")),
+            (self._status, 252, 40, 242, 20, ("Segoe UI", 9)),
+            (self._detail, 252, 62, 242, 20, ("Segoe UI", 8)),
+            (self._microphone_level, 244, 136, 162, 18, ("Cascadia Mono", 8)),
+            (self._output_status, 244, 160, 162, 18, ("Cascadia Mono", 8)),
         )
-        self._tk.Label(frame, textvariable=self._detail, anchor="w").grid(
-            row=2, column=0, columnspan=4, sticky="ew"
-        )
+        self._semantic_labels = []
+        for variable, x, y, width, height, font in semantic_labels:
+            label = self._tk.Label(
+                frame,
+                textvariable=variable,
+                anchor="w",
+                background="#06160e",
+                foreground="#bfe8cf",
+                borderwidth=0,
+                highlightthickness=0,
+                font=font,
+            )
+            label.place(x=x, y=y, width=width, height=height)
+            self._semantic_labels.append(label)
         controls = (
-            (IntentKind.START_RECORDING, "Start", False),
-            (IntentKind.FINISH_RECORDING, "Finish", False),
+            (IntentKind.START_RECORDING, "START", False),
+            (IntentKind.FINISH_RECORDING, "FINISH", False),
             (IntentKind.TOGGLE_OUTPUT_MUTE, self._mute_text, False),
-            (IntentKind.OPEN_SETTINGS, "Settings", True),
-            (IntentKind.OPEN_VOICE, "Voice", True),
-            (IntentKind.OPEN_REVIEW, "Review", True),
-            (IntentKind.OPEN_DIAGNOSTICS, "Diagnostics", True),
-            (IntentKind.QUIT, "Quit", False),
+            (IntentKind.OPEN_SETTINGS, "SETTINGS", True),
+            (IntentKind.OPEN_VOICE, "VOICE", True),
+            (IntentKind.OPEN_REVIEW, "REVIEW", True),
+            (IntentKind.OPEN_DIAGNOSTICS, "DIAGNOSTICS", True),
+            (IntentKind.QUIT, "QUIT", False),
         )
         for index, (kind, label, allow_focus) in enumerate(controls):
             label_option = (
@@ -208,8 +235,30 @@ class TkCompanionShell:
                 else self._intent_command(kind, allow_focus=allow_focus)
             )
             button = self._tk.Button(frame, command=command, **label_option)
-            button.grid(row=3 + index // 4, column=index % 4, sticky="ew")
+            button.configure(
+                background="#06180f",
+                foreground="#d5fbe2",
+                activebackground="#123824",
+                activeforeground="#effff5",
+                disabledforeground="#638d72",
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                padx=5,
+                pady=3,
+                font=("Segoe UI", 7),
+            )
+            button.grid(
+                row=1,
+                column=index,
+                sticky="nsew",
+                padx=0,
+                pady=0,
+            )
             self.buttons[kind] = button
+        if hasattr(frame, "grid_columnconfigure"):
+            for column in range(8):
+                frame.grid_columnconfigure(column, weight=1)
 
     def _intent_command(
         self, kind: IntentKind, *, allow_focus: bool
@@ -242,15 +291,27 @@ class TkCompanionShell:
                 break
         if latest is not None:
             self._apply_snapshot(latest)
+        self._deck.tick()
         self._schedule_updates()
 
     def _apply_snapshot(self, snapshot: CompanionSnapshot) -> None:
         self._snapshot = snapshot
         view = to_view_model(snapshot)
-        self._cue.set(f"[{view.cue}]")
+        self._cue.set(view.cue)
         self._status.set(view.status)
         self._detail.set(view.detail)
-        self._mute_text.set("Unmute output" if snapshot.output_muted else "Mute output")
+        self._mute_text.set("UNMUTE" if snapshot.output_muted else "MUTE")
+        self._microphone_level.set(microphone_label(snapshot))
+        self._output_status.set(
+            f"OUTPUT · MUTED ({snapshot.output_volume}%)"
+            if snapshot.output_muted
+            else f"OUTPUT · {snapshot.output_volume}%"
+        )
+        visual = matrix_visual(snapshot.runtime.phase)
+        self._semantic_labels[0].configure(foreground=visual.accent)
+        self._semantic_labels[1].configure(foreground="#a7d8bb")
+        self._semantic_labels[2].configure(foreground="#70a985")
+        self._deck.set_snapshot(snapshot)
         self.buttons[IntentKind.START_RECORDING].configure(
             state=self._tk.NORMAL if view.can_start_recording else self._tk.DISABLED
         )
@@ -271,7 +332,7 @@ class TkCompanionShell:
         try:
             snapshot = self._dispatch(CompanionIntent(kind, allow_focus=allow_focus))
         except Exception:
-            self._detail.set("Action unavailable")
+            self._apply_snapshot(replace(self._snapshot, detail="Action unavailable"))
             return
         if snapshot is not None:
             self._apply_snapshot(snapshot)

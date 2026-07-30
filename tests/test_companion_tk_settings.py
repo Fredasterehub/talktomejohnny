@@ -164,10 +164,12 @@ class _Tk:
     Checkbutton = _Widget
     Radiobutton = _Widget
     Entry = _Widget
+    Scale = _Widget
     Listbox = _Listbox
     Text = _Text
     StringVar = _Variable
     BooleanVar = _Variable
+    IntVar = _Variable
 
     def __init__(self) -> None:
         self.windows: list[_Window] = []
@@ -322,6 +324,7 @@ def _surfaces(
     messages = _Messages()
     settings: dict[str, object] = {
         "auto_submit": True,
+        "output_volume": 100,
         "recording_mode": "push-toggle",
         "assistant_provider": "claude",
         "control_binding": "ctrl+alt+space",
@@ -336,6 +339,8 @@ def _surfaces(
         ),
         get_auto_submit=lambda: bool(settings["auto_submit"]),
         set_auto_submit=lambda value: settings.__setitem__("auto_submit", value),
+        get_output_volume=lambda: int(settings["output_volume"]),
+        set_output_volume=lambda value: settings.__setitem__("output_volume", value),
         get_recording_mode=lambda: str(settings["recording_mode"]),
         set_recording_mode=lambda value: settings.__setitem__("recording_mode", value),
         get_assistant_provider=lambda: str(settings["assistant_provider"]),
@@ -373,14 +378,17 @@ def test_settings_surface_focuses_only_when_opened_and_shows_exact_warning(
 
     assert ("focus", None) in surface.window.calls
     assert surface.controls["warning"].options["text"] == AUTO_SUBMIT_WARNING
+    assert "microphone gain" in surface.controls["output_volume_help"].options["text"]
     assert "Hold to talk" in surface.controls["push_to_talk"].options["text"]
     assert "Restart required" in surface.controls["provider_restart"].options["text"]
+    surface.variables["output_volume"].set(73)
     surface.variables["auto_submit"].set(False)
     surface.variables["recording_mode"].set("push-to-talk")
     surface.variables["assistant_provider"].set("codex")
     surface.controls["save"].invoke()
     assert settings == {
         "auto_submit": False,
+        "output_volume": 73,
         "recording_mode": "push-to-talk",
         "assistant_provider": "codex",
         "control_binding": "ctrl+alt+space",

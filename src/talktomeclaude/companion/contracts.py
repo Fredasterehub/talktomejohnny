@@ -53,3 +53,5 @@ class CompanionSnapshot:
     runtime: RuntimeState
     detail: str = ""
     output_muted: bool = False
+    output_volume: int = 100
+    microphone_level: float = 0.0

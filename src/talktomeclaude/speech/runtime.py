@@ -383,6 +383,70 @@ class PersistentSpeechRuntime:
                 ),
             )
 
+    def switch_voice(
+        self,
+        selected_voice: str,
+        parent_state: ParentState,
+    ) -> WorkerRestartResult[ParentState]:
+        """Atomically replace the worker with one bound to ``selected_voice``.
+
+        The candidate worker is created before the current worker is disturbed.
+        A creation failure therefore leaves the existing voice available.
+        """
+
+        if not isinstance(selected_voice, str) or not selected_voice.strip():
+            raise ValueError("selected voice must not be empty")
+        with self._lock:
+            if self._closed:
+                raise SpeechRuntimeError("speech runtime is shut down")
+            if selected_voice == self._selected_voice and self._available:
+                return WorkerRestartResult(
+                    selected_voice=self._selected_voice,
+                    parent_state=parent_state,
+                    old_worker_reaped=True,
+                    terminate_sent=False,
+                    kill_sent=False,
+                    boundary_replacement_required=False,
+                    fault=None,
+                )
+
+            replacement = _bounded_create(
+                self._factory,
+                selected_voice,
+                self._shutdown_deadline_seconds,
+            )
+            if replacement is None:
+                raise SpeechRuntimeError(
+                    "selected voice worker initialization failed"
+                )
+
+            old_worker = self._worker
+            if old_worker is None:
+                terminate_sent = False
+                kill_sent = False
+                reaped = True
+            else:
+                terminate_sent, kill_sent, reaped = _reap_worker(
+                    old_worker,
+                    self._shutdown_deadline_seconds,
+                )
+            if not reaped:
+                _reap_worker(replacement, self._shutdown_deadline_seconds)
+                raise SpeechRuntimeError("speech worker could not be reaped")
+
+            self._worker = replacement
+            self._selected_voice = selected_voice
+            self._available = True
+            return WorkerRestartResult(
+                selected_voice=selected_voice,
+                parent_state=parent_state,
+                old_worker_reaped=True,
+                terminate_sent=terminate_sent,
+                kill_sent=kill_sent,
+                boundary_replacement_required=False,
+                fault=None,
+            )
+
     def reset_synthesis_boundary(self) -> bool:
         try:
             self.restart(None)

@@ -4,9 +4,17 @@ All notable changes to TalkToMeJohnny will be recorded here.
 
 ## Unreleased
 
-- Added a Settings shortcut recorder for the companion's global recording
-  control, including single printable keys such as `~` and `?`, with live
-  rebinding, conflict-safe rollback, and matching `config get/set` commands.
+- Added Matrix Deck live microphone level and waveform telemetry with no audio
+  retention, plus a separate `0`-`100` spoken-output volume control that affects
+  live replies and previews and is exposed through `config get/set output-volume`.
+- Made live voice selection update the running companion without a restart;
+  active speech is stopped and parked first, activation failure restores the
+  prior selection, and the companion does not silently fall back to another
+  voice.
+- Kept model keep-warm and reply-latency optimization deferred instead of
+  promising it in this release.
+- Retried brief Windows file-scanner denials around atomic settings replacement
+  so concurrent configuration writes do not fail spuriously.
 
 ## 0.1.4 - 2026-07-29
 

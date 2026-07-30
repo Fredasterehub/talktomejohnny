@@ -326,6 +326,8 @@ class TkCompanionSurfaces:
         set_control_binding: Callable[[str], object],
         get_auto_submit: Callable[[], bool],
         set_auto_submit: Callable[[bool], object],
+        get_output_volume: Callable[[], int],
+        set_output_volume: Callable[[int], object],
         get_recording_mode: Callable[[], str],
         set_recording_mode: Callable[[str], object],
         get_assistant_provider: Callable[[], str],
@@ -352,6 +354,8 @@ class TkCompanionSurfaces:
         self._set_control_binding = set_control_binding
         self._get_auto_submit = get_auto_submit
         self._set_auto_submit = set_auto_submit
+        self._get_output_volume = get_output_volume
+        self._set_output_volume = set_output_volume
         self._get_recording_mode = get_recording_mode
         self._set_recording_mode = set_recording_mode
         self._get_assistant_provider = get_assistant_provider
@@ -389,7 +393,7 @@ class TkCompanionSurfaces:
         return stopped
 
     def open_settings(self) -> TkSurfaceWindow:
-        surface = self._new_surface("TalkToMeJohnny settings", "680x500")
+        surface = self._new_surface("TalkToMeJohnny settings", "680x560")
         window = surface.window
         frame = self._tk.Frame(window, padx=12, pady=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -411,9 +415,13 @@ class TkCompanionSurfaces:
                 else config.DEFAULT_ASSISTANT_PROVIDER
             )
         )
+        output_volume = self._tk.IntVar(value=self._get_output_volume())
+        output_volume_text = self._tk.StringVar(value=f"{int(output_volume.get())}%")
         surface.variables.update(
             {
                 "auto_submit": auto_submit,
+                "output_volume": output_volume,
+                "output_volume_text": output_volume_text,
                 "recording_mode": recording_mode,
                 "assistant_provider": assistant_provider,
             }
@@ -432,11 +440,55 @@ class TkCompanionSurfaces:
             wraplength=520,
         )
         warning.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 12))
+        self._tk.Label(frame, text="Spoken output", anchor="w").grid(
+            row=2, column=0, columnspan=3, sticky="w"
+        )
+        self._tk.Label(frame, text="Volume", anchor="w").grid(
+            row=3, column=0, sticky="w"
+        )
+
+        def update_volume_text(value: object) -> None:
+            try:
+                volume = int(float(value))
+            except (TypeError, ValueError):
+                volume = int(output_volume.get())
+            output_volume_text.set(f"{volume}%")
+
+        output_volume_scale = self._tk.Scale(
+            frame,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            resolution=1,
+            showvalue=False,
+            variable=output_volume,
+            command=update_volume_text,
+            length=320,
+        )
+        output_volume_scale.grid(row=3, column=1, columnspan=2, sticky="ew", padx=(12, 0))
+        volume_value = self._tk.Label(
+            frame,
+            textvariable=output_volume_text,
+            anchor="e",
+            width=5,
+        )
+        volume_value.grid(row=3, column=3, sticky="e", padx=(12, 0))
+        volume_hint = self._tk.Label(
+            frame,
+            text=(
+                "Applies to spoken replies and voice previews. "
+                "Does not change microphone gain."
+            ),
+            justify="left",
+            anchor="w",
+            wraplength=640,
+        )
+        volume_hint.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(4, 14))
         self._tk.Label(frame, text="Recording control", anchor="w").grid(
-            row=2, column=0, columnspan=2, sticky="w"
+            row=5, column=0, columnspan=2, sticky="w"
         )
         self._tk.Label(frame, text="Recording hotkey", anchor="w").grid(
-            row=3, column=0, sticky="w"
+            row=6, column=0, sticky="w"
         )
         control_binding_entry = self._tk.Entry(
             frame,
@@ -444,7 +496,7 @@ class TkCompanionSurfaces:
             width=30,
             state="readonly",
         )
-        control_binding_entry.grid(row=3, column=1, sticky="ew", padx=(12, 12))
+        control_binding_entry.grid(row=6, column=1, sticky="ew", padx=(12, 12))
         capture_state: dict[str, object] = {
             "active": False,
             "binding_id": None,
@@ -488,7 +540,7 @@ class TkCompanionSurfaces:
             text="Change shortcut",
             command=toggle_capture,
         )
-        change_binding.grid(row=3, column=2, sticky="w")
+        change_binding.grid(row=6, column=2, sticky="w")
         control_binding_warning = self._tk.Label(
             frame,
             text=CONTROL_KEYBINDING_WARNING,
@@ -497,7 +549,7 @@ class TkCompanionSurfaces:
             wraplength=640,
         )
         control_binding_warning.grid(
-            row=4,
+            row=7,
             column=0,
             columnspan=3,
             sticky="ew",
@@ -509,16 +561,16 @@ class TkCompanionSurfaces:
             variable=recording_mode,
             value="push-toggle",
         )
-        toggle.grid(row=5, column=0, columnspan=3, sticky="w")
+        toggle.grid(row=8, column=0, columnspan=3, sticky="w")
         hold = self._tk.Radiobutton(
             frame,
             text="Hold to talk (push-to-talk)",
             variable=recording_mode,
             value="push-to-talk",
         )
-        hold.grid(row=6, column=0, columnspan=3, sticky="w")
+        hold.grid(row=9, column=0, columnspan=3, sticky="w")
         self._tk.Label(frame, text="Assistant provider", anchor="w").grid(
-            row=7, column=0, columnspan=3, sticky="w", pady=(16, 0)
+            row=10, column=0, columnspan=3, sticky="w", pady=(16, 0)
         )
         both = self._tk.Radiobutton(
             frame,
@@ -526,21 +578,21 @@ class TkCompanionSurfaces:
             variable=assistant_provider,
             value="both",
         )
-        both.grid(row=8, column=0, columnspan=3, sticky="w")
+        both.grid(row=11, column=0, columnspan=3, sticky="w")
         claude = self._tk.Radiobutton(
             frame,
             text="Claude Code only",
             variable=assistant_provider,
             value="claude",
         )
-        claude.grid(row=9, column=0, columnspan=3, sticky="w")
+        claude.grid(row=12, column=0, columnspan=3, sticky="w")
         codex = self._tk.Radiobutton(
             frame,
             text="Codex CLI only",
             variable=assistant_provider,
             value="codex",
         )
-        codex.grid(row=10, column=0, columnspan=3, sticky="w")
+        codex.grid(row=13, column=0, columnspan=3, sticky="w")
         restart = self._tk.Label(
             frame,
             text=(
@@ -551,7 +603,7 @@ class TkCompanionSurfaces:
             anchor="w",
             wraplength=640,
         )
-        restart.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        restart.grid(row=14, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
         def close() -> None:
             finish_capture()
@@ -563,6 +615,7 @@ class TkCompanionSurfaces:
             finish_capture()
             try:
                 self._set_control_binding(str(control_binding.get()))
+                self._set_output_volume(int(output_volume.get()))
                 self._set_recording_mode(str(recording_mode.get()))
                 self._set_auto_submit(bool(auto_submit.get()))
                 self._set_assistant_provider(str(assistant_provider.get()))
@@ -572,13 +625,16 @@ class TkCompanionSurfaces:
             window.destroy()
 
         save_button = self._tk.Button(frame, text="Save", command=save)
-        save_button.grid(row=12, column=0, sticky="e", pady=(20, 0))
+        save_button.grid(row=15, column=0, sticky="e", pady=(20, 0))
         cancel = self._tk.Button(frame, text="Cancel", command=close)
-        cancel.grid(row=12, column=1, sticky="w", pady=(20, 0))
+        cancel.grid(row=15, column=1, sticky="w", pady=(20, 0))
         surface.controls.update(
             {
                 "auto_submit": auto_toggle,
                 "warning": warning,
+                "output_volume": output_volume_scale,
+                "output_volume_value": volume_value,
+                "output_volume_help": volume_hint,
                 "control_binding": control_binding_entry,
                 "change_control_binding": change_binding,
                 "control_binding_warning": control_binding_warning,

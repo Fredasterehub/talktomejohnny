@@ -106,6 +106,9 @@ class _Speech:
         self.stops = 0
         self.shutdowns = 0
         self.muted = False
+        self.volumes: list[int] = []
+        self.live_volume = 100
+        self.raise_on_set_volume = False
         self.controls: list[ControlCommand] = []
         self.control_outcome = SpeechControlOutcome(False, False)
         self.control_entered: threading.Event | None = None
@@ -127,6 +130,12 @@ class _Speech:
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
+
+    def set_volume(self, volume: int) -> None:
+        self.volumes.append(volume)
+        if self.raise_on_set_volume:
+            raise RuntimeError("speaker offline")
+        self.live_volume = volume
 
     def stop(self) -> None:
         self.stops += 1
@@ -186,6 +195,7 @@ class CompanionControllerTests(unittest.TestCase):
         self.transcription: list[Any] = ["hello terminal", None]
         self.surface_calls: list[str] = []
         self.persisted_mute: list[bool] = []
+        self.persisted_volume: list[int] = []
         self.controller = CompanionController(
             self.capture,
             self.microphone,
@@ -202,6 +212,7 @@ class CompanionControllerTests(unittest.TestCase):
             worker_starter=self.workers,
             shutdown_deadline_seconds=0.2,
             persist_output_muted=self.persisted_mute.append,
+            persist_output_volume=self.persisted_volume.append,
         )
 
     def tearDown(self) -> None:
@@ -466,6 +477,92 @@ class CompanionControllerTests(unittest.TestCase):
         self.assertEqual(muted.detail, "Spoken output muted")
         self.assertEqual(self.speech.stops, 1)
         self.assertEqual(self.persisted_mute, [True])
+
+    def test_output_volume_persists_then_applies_to_live_speech(self) -> None:
+        changed = self.controller.set_output_volume(72)
+
+        self.assertEqual(changed.output_volume, 72)
+        self.assertEqual(self.persisted_volume, [72])
+        self.assertEqual(self.speech.volumes, [72])
+
+    def test_output_volume_persistence_failure_does_not_change_live_state(self) -> None:
+        self.controller._persist_output_volume = lambda _value: (_ for _ in ()).throw(
+            OSError("config unavailable")
+        )
+
+        with self.assertRaisesRegex(OSError, "config unavailable"):
+            self.controller.set_output_volume(55)
+
+        self.assertEqual(self.controller.snapshot.output_volume, 100)
+        self.assertEqual(self.speech.volumes, [])
+
+    def test_output_volume_live_apply_failure_rolls_back_persisted_config_and_live_state(
+        self,
+    ) -> None:
+        self.speech.live_volume = 100
+        self.speech.raise_on_set_volume = True
+
+        with self.assertRaisesRegex(RuntimeError, "speaker offline"):
+            self.controller.set_output_volume(55)
+
+        self.assertEqual(self.persisted_volume, [55, 100])
+        self.assertEqual(self.controller.snapshot.output_volume, 100)
+        self.assertEqual(self.speech.live_volume, 100)
+        self.assertEqual(self.speech.volumes, [55])
+
+    def test_microphone_rms_is_db_normalized_and_late_idle_levels_are_ignored(self) -> None:
+        self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
+
+        self.controller.set_input_level(0.01)
+
+        self.assertAlmostEqual(self.controller.snapshot.microphone_level, 1 / 3, places=2)
+        self.controller.dispatch(CompanionIntent(IntentKind.CANCEL))
+        self.controller.set_input_level(0.5)
+        self.assertEqual(self.controller.snapshot.microphone_level, 0.0)
+
+    def test_microphone_level_publish_cadence_uses_monotonic_without_sleep(self) -> None:
+        observed: list[CompanionSnapshot] = []
+        self.controller.subscribe(observed.append)
+        self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
+        baseline = len(observed)
+
+        original_monotonic = time.monotonic
+        monotonic_values = iter((10.0, 10.05, 10.16))
+        time.monotonic = lambda: next(monotonic_values)
+        try:
+            self.controller.set_input_level(0.2)
+            self.controller.set_input_level(0.2)
+            self.controller.set_input_level(0.2)
+        finally:
+            time.monotonic = original_monotonic
+
+        self.assertEqual(len(observed) - baseline, 2)
+        self.assertGreater(self.controller.snapshot.microphone_level, 0.0)
+
+    def test_first_post_restart_microphone_level_publishes_immediately(self) -> None:
+        observed: list[CompanionSnapshot] = []
+        self.controller.subscribe(observed.append)
+
+        original_monotonic = time.monotonic
+        monotonic_values = iter((10.0, 10.05))
+        time.monotonic = lambda: next(monotonic_values)
+        try:
+            self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
+            initial_baseline = len(observed)
+            self.controller.set_input_level(0.2)
+            self.assertEqual(len(observed) - initial_baseline, 1)
+
+            self.controller.dispatch(CompanionIntent(IntentKind.CANCEL))
+            restart_baseline = len(observed)
+            self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
+            restart_after_start = len(observed)
+            self.controller.set_input_level(0.2)
+        finally:
+            time.monotonic = original_monotonic
+
+        self.assertEqual(restart_after_start - restart_baseline, 1)
+        self.assertEqual(len(observed) - restart_after_start, 1)
+        self.assertGreater(self.controller.snapshot.microphone_level, 0.0)
 
     def test_new_recording_interrupts_active_speech_before_microphone_start(self) -> None:
         event = ReplyEvent.create(

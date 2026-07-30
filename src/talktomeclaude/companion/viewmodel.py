@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from talktomeclaude.companion.contracts import CompanionSnapshot
@@ -23,6 +24,7 @@ class CompanionViewModel:
     detail: str
     can_start_recording: bool
     can_finish_recording: bool
+    microphone_level: str
     focus_requested: bool = False
 
 
@@ -48,6 +50,8 @@ def to_view_model(snapshot: CompanionSnapshot) -> CompanionViewModel:
     runtime = snapshot.runtime
     cue, status = _PRESENTATION[runtime.phase]
     accepted = legal_events(runtime)
+    level = snapshot.microphone_level
+    normalized = 0.0 if not math.isfinite(level) else max(0.0, min(1.0, float(level)))
     return CompanionViewModel(
         phase=runtime.phase,
         cue=cue,
@@ -55,4 +59,5 @@ def to_view_model(snapshot: CompanionSnapshot) -> CompanionViewModel:
         detail=snapshot.detail,
         can_start_recording=EventKind.START_RECORDING in accepted,
         can_finish_recording=EventKind.FINISH_RECORDING in accepted,
+        microphone_level=f"{int(round(normalized * 100))}%",
     )

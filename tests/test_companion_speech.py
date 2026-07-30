@@ -43,6 +43,16 @@ class _Pipeline:
 class _Runtime:
     def __init__(self) -> None:
         self.shutdowns = 0
+        self.selected_voice = "rick"
+        self.switched: list[str] = []
+        self.raise_on_switch = False
+
+    def switch_voice(self, selected_voice: str, parent_state: object = None) -> object:
+        self.switched.append(selected_voice)
+        if self.raise_on_switch:
+            raise RuntimeError("voice worker failed")
+        self.selected_voice = selected_voice
+        return SimpleNamespace(selected_voice=selected_voice, parent_state=parent_state)
 
     def shutdown(self) -> bool:
         self.shutdowns += 1
@@ -107,6 +117,53 @@ class CompanionSpeechTests(unittest.TestCase):
         self.speech.accept(self.event())
         self.speech.set_muted(False)
         self.assertEqual(self.pipeline.offers, [])
+
+    def test_live_voice_switch_stops_current_answer_and_updates_runtime(self) -> None:
+        event = self.event()
+        self.speech.accept(event)
+
+        self.speech.set_voice("gimli")
+
+        self.assertEqual(self.runtime.switched, ["gimli"])
+        self.assertEqual(self.runtime.selected_voice, "gimli")
+        self.assertEqual(self.pipeline.queued, [])
+        state = self.session.restore(event.event_id)
+        assert state is not None
+        self.assertEqual(state.status, OralStatus.PARKED)
+
+    def test_selecting_current_live_voice_does_not_interrupt_speech(self) -> None:
+        self.speech.accept(self.event())
+
+        self.speech.set_voice("rick")
+
+        self.assertEqual(self.runtime.switched, [])
+        self.assertEqual(self.pipeline.stops, 0)
+
+    def test_failed_live_voice_switch_parks_current_answer_and_old_voice_can_resume(
+        self,
+    ) -> None:
+        event = self.event()
+        self.speech.accept(event)
+        self.runtime.raise_on_switch = True
+
+        with self.assertRaisesRegex(RuntimeError, "voice worker failed"):
+            self.speech.set_voice("gimli")
+
+        state = self.session.restore(event.event_id)
+        assert state is not None
+        self.assertEqual(state.status, OralStatus.PARKED)
+        self.assertEqual(self.pipeline.queued, [])
+        self.assertEqual(self.runtime.selected_voice, "rick")
+        self.assertEqual(self.runtime.switched, ["gimli"])
+
+        outcome = self.speech.handle_control(ControlCommand(Control.GO_BACK))
+
+        self.assertTrue(outcome.applied)
+        self.assertTrue(outcome.speaking)
+        self.assertEqual(len(self.pipeline.queued), 1)
+        resumed = self.session.restore(event.event_id)
+        assert resumed is not None
+        self.assertEqual(resumed.status, OralStatus.ACTIVE)
 
     def test_completion_persists_then_notifies_whole_answer(self) -> None:
         event = self.event()

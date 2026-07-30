@@ -207,7 +207,10 @@ contains spaces, quote it as usual.
 
 The Windows companion is an explicit opt-in desktop path. It is Windows 11 only.
 The companion and its recovery paths are documented in
-[`docs/WINDOWS_COMPANION.md`](docs/WINDOWS_COMPANION.md).
+[`docs/WINDOWS_COMPANION.md`](docs/WINDOWS_COMPANION.md). The Matrix Deck view
+shows live microphone level and waveform telemetry without retaining audio,
+voice changes apply to the running companion without restarting, and spoken
+output has a separate `0`-`100` volume control.
 
 Recommended entry points:
 
@@ -240,6 +243,8 @@ remains a compatibility alias during migration.
 The Windows companion's recording shortcut is configurable in Settings through
 **Change shortcut**. It accepts combinations and single printable keys such as
 `~` or `?`; `Ctrl+Alt+Space` remains the default for existing installations.
+Use `talktomejohnny config get output-volume` and `talktomejohnny config set
+output-volume VALUE` to inspect or change spoken output volume.
 
 ## Migration notes
 

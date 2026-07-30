@@ -30,6 +30,7 @@ class _Widget:
     def __init__(self, _parent: object = None, **options: Any) -> None:
         self.options = options
         self.grid_options: dict[str, object] = {}
+        self.place_options: dict[str, object] = {}
 
     def grid(self, **options: object) -> None:
         self.grid_options = dict(options)
@@ -37,10 +38,41 @@ class _Widget:
     def configure(self, **options: object) -> None:
         self.options.update(options)
 
+    def place(self, **options: object) -> None:
+        self.place_options = dict(options)
+
     def invoke(self) -> None:
         command = self.options.get("command")
         if callable(command):
             command()
+
+    def grid_columnconfigure(self, _column: int, **_options: object) -> None:
+        return None
+
+
+class _Canvas(_Widget):
+    def __init__(self, _parent: object = None, **options: Any) -> None:
+        super().__init__(_parent, **options)
+        self.items: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    def delete(self, _target: object) -> None:
+        self.items.clear()
+
+    def _create(self, kind: str, *args: object, **options: object) -> int:
+        self.items.append((kind, args, dict(options)))
+        return len(self.items)
+
+    def create_rectangle(self, *args: object, **options: object) -> int:
+        return self._create("rectangle", *args, **options)
+
+    def create_polygon(self, *args: object, **options: object) -> int:
+        return self._create("polygon", *args, **options)
+
+    def create_text(self, *args: object, **options: object) -> int:
+        return self._create("text", *args, **options)
+
+    def create_line(self, *args: object, **options: object) -> int:
+        return self._create("line", *args, **options)
 
 
 class _Root(_Widget):
@@ -101,6 +133,7 @@ class _Tk:
     Frame = _Widget
     Label = _Widget
     Button = _Widget
+    Canvas = _Canvas
     StringVar = _Variable
 
     def __init__(self) -> None:
@@ -154,12 +187,24 @@ class TkCompanionShellTests(unittest.TestCase):
         self.shell.close()
 
     def test_launch_is_compact_semantic_and_native_nonactivating(self) -> None:
-        self.assertIn(("geometry", "360x190"), self.tk.root.calls)
+        self.assertIn(("geometry", "520x326"), self.tk.root.calls)
         self.assertIn(("resizable", (False, False)), self.tk.root.calls)
         self.assertEqual(self.policy.calls[:2], [("apply", 41), ("show", 99)])
-        self.assertEqual(self.shell._cue.get(), "[IDLE]")
+        self.assertEqual(self.shell._cue.get(), "IDLE")
         self.assertEqual(self.shell._status.get(), "Companion ready")
         self.assertEqual(self.shell._detail.get(), "ready detail")
+        self.assertEqual(self.shell._microphone_level.get(), "MIC · STANDBY")
+        self.assertEqual(len(self.shell._semantic_labels), 5)
+        self.assertTrue(
+            all(label.place_options for label in self.shell._semantic_labels)
+        )
+        canvas_text = {
+            str(options.get("text"))
+            for kind, _args, options in self.shell._canvas.items
+            if kind == "text"
+        }
+        self.assertIn("TALKTOMEJOHNNY", canvas_text)
+        self.assertEqual(self.shell._output_status.get(), "OUTPUT · 100%")
         self.assertEqual(self.tk.root.focus_calls, 0)
 
     def test_workflow_mute_and_surface_controls_dispatch_focus_permissions(self) -> None:
@@ -171,7 +216,7 @@ class TkCompanionShellTests(unittest.TestCase):
         )
         self.shell.buttons[IntentKind.FINISH_RECORDING].invoke()
         self.shell.buttons[IntentKind.TOGGLE_OUTPUT_MUTE].invoke()
-        self.assertEqual(self.shell._mute_text.get(), "Unmute output")
+        self.assertEqual(self.shell._mute_text.get(), "UNMUTE")
 
         for kind in (
             IntentKind.OPEN_SETTINGS,
@@ -198,18 +243,100 @@ class TkCompanionShellTests(unittest.TestCase):
     def test_unsolicited_updates_change_text_and_controls_without_focus(self) -> None:
         self.shell.publish(
             CompanionSnapshot(
-                RuntimeState(RuntimePhase.RECORDING),
-                "microphone active",
+                runtime=RuntimeState(RuntimePhase.RECORDING),
+                detail="microphone active",
+                output_muted=False,
+                output_volume=64,
+                microphone_level=0.42,
             )
         )
 
         self.shell._drain_updates()
 
-        self.assertEqual(self.shell._cue.get(), "[RECORDING]")
+        self.assertEqual(self.shell._cue.get(), "RECORDING")
         self.assertEqual(self.shell._status.get(), "Recording")
         self.assertEqual(self.shell._detail.get(), "microphone active")
+        self.assertEqual(self.shell._microphone_level.get(), "MIC · LIVE 42%")
+        self.assertEqual(self.shell._output_status.get(), "OUTPUT · 64%")
+        self.assertTrue(
+            any(
+                kind == "line" and options.get("tags") == ("waveform",)
+                for kind, _args, options in self.shell._canvas.items
+            )
+        )
         self.assertEqual(self.tk.root.focus_calls, 0)
         self.assertEqual(self.policy.calls.count(("show", 99)), 1)
+
+    def test_recording_silence_is_labeled_no_signal_not_hardware_muted(self) -> None:
+        self.shell.publish(
+            CompanionSnapshot(
+                runtime=RuntimeState(RuntimePhase.RECORDING),
+                microphone_level=0.0,
+            )
+        )
+
+        self.shell._drain_updates()
+
+        self.assertEqual(self.shell._microphone_level.get(), "MIC · NO SIGNAL")
+        self.assertNotEqual(self.shell._microphone_level.get(), "MIC · MUTED")
+
+    def test_muted_output_canvas_text_preserves_volume_percent(self) -> None:
+        self.shell.publish(
+            CompanionSnapshot(
+                runtime=RuntimeState(RuntimePhase.IDLE),
+                output_muted=True,
+                output_volume=37,
+            )
+        )
+
+        self.shell._drain_updates()
+
+        self.assertEqual(self.shell._output_status.get(), "OUTPUT · MUTED (37%)")
+
+    def test_paused_snapshot_uses_paused_matrix_state_text(self) -> None:
+        self.shell.publish(
+            CompanionSnapshot(
+                runtime=RuntimeState(RuntimePhase.PAUSED),
+                detail="reply paused",
+            )
+        )
+
+        self.shell._drain_updates()
+
+        self.assertEqual(self.shell._cue.get(), "PAUSED")
+        self.assertEqual(self.shell._status.get(), "Speech paused")
+        self.assertEqual(self.shell._semantic_labels[0].options["textvariable"], self.shell._cue)
+
+    def test_recoverable_error_snapshot_uses_error_matrix_state_text(self) -> None:
+        self.shell.publish(
+            CompanionSnapshot(
+                runtime=RuntimeState(
+                    RuntimePhase.RECOVERABLE_ERROR,
+                    resume_phase=RuntimePhase.IDLE,
+                    error_code="capture_failed",
+                ),
+                detail="capture needs attention",
+            )
+        )
+
+        self.shell._drain_updates()
+
+        self.assertEqual(self.shell._cue.get(), "ERROR")
+        self.assertEqual(self.shell._status.get(), "Companion needs attention")
+        self.assertEqual(self.shell._semantic_labels[0].options["textvariable"], self.shell._cue)
+
+    def test_dispatch_failure_updates_visible_native_detail(self) -> None:
+        def fail(_intent: CompanionIntent) -> CompanionSnapshot:
+            raise RuntimeError("private failure detail")
+
+        self.shell._dispatch = fail
+        self.shell.buttons[IntentKind.START_RECORDING].invoke()
+
+        self.assertEqual(self.shell._detail.get(), "Action unavailable")
+        self.assertEqual(
+            self.shell._semantic_labels[2].options["textvariable"],
+            self.shell._detail,
+        )
 
     def test_quit_returns_to_application_owned_shutdown_without_dispatch(self) -> None:
         self.shell.buttons[IntentKind.QUIT].invoke()

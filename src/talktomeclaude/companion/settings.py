@@ -42,6 +42,10 @@ class VoicePreviewError(SettingsError):
     """Raised when the injected preview worker cannot play a sample."""
 
 
+class VoiceActivationError(SettingsError):
+    """Raised when a persisted selection cannot reach the live speech runtime."""
+
+
 class VoiceRollbackError(SettingsError):
     """Raised when a failed flow cannot completely remove its new voice."""
 
@@ -122,6 +126,7 @@ class SettingsStore(Protocol):
 
 
 PreviewWorker = Callable[[str, str], object]
+VoiceActivator = Callable[[str], object]
 CancelCheck = Callable[[], bool]
 StepCallback = Callable[[VoiceFlowStep], object]
 
@@ -147,6 +152,7 @@ class VoiceSettingsService:
         resolve_voice: Callable[[str], Voice] = tts.get_voice,
         is_available: Callable[[Voice], bool] = tts.is_available,
         preview_worker: PreviewWorker = _default_preview_worker,
+        activate_voice: VoiceActivator | None = None,
     ) -> None:
         self._settings = settings_store or ConfigStore(config.config_path())
         self._bundled = tuple(tts.BUNDLED_VOICES if bundled_voices is None else bundled_voices)
@@ -157,6 +163,7 @@ class VoiceSettingsService:
         self._resolve_voice = resolve_voice
         self._is_available = is_available
         self._preview_worker = preview_worker
+        self._activate_voice = activate_voice
 
     def selected_voice(self) -> str | None:
         value = self._settings.load().get("default-voice")
@@ -200,14 +207,34 @@ class VoiceSettingsService:
         return tuple(options)
 
     def select_voice(self, name: str) -> VoiceOption:
-        """Persist one known voice with a single atomic ConfigStore update."""
+        """Persist one known voice and apply it to the live runtime when present."""
         canonical = self._canonical_name(name)
         option = self._option_by_name(canonical)
+        previous = self._settings.load().get("default-voice")
 
         def select(settings: dict[str, Any]) -> None:
             settings["default-voice"] = canonical
 
         self._settings.update(select)
+        if self._activate_voice is not None:
+            try:
+                self._activate_voice(canonical)
+            except Exception as exc:
+                def restore(settings: dict[str, Any]) -> None:
+                    if isinstance(previous, str) and previous.strip():
+                        settings["default-voice"] = previous
+                    else:
+                        settings.pop("default-voice", None)
+
+                try:
+                    self._settings.update(restore)
+                except Exception as rollback_exc:
+                    raise VoiceRollbackError(
+                        f"voice {canonical!r} could not be activated or rolled back"
+                    ) from rollback_exc
+                raise VoiceActivationError(
+                    f"voice {canonical!r} could not be activated"
+                ) from exc
         return replace(option, selected=True)
 
     def clear_selection(self) -> None:

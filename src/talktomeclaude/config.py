@@ -29,6 +29,7 @@ RECORDING_MODES = ("always-on", "push-to-talk", "push-toggle")
 DEFAULT_RECORDING_MODE = "push-to-talk"
 DEFAULT_COMPANION_RECORDING_MODE = "push-toggle"
 DEFAULT_WAKE_PHRASE = "hey johnny"
+DEFAULT_OUTPUT_VOLUME = 100
 ASSISTANT_PROVIDERS = ("both", "claude", "codex")
 DEFAULT_CONTROL_KEYBINDING = "ctrl+alt+space"
 DEFAULT_ASSISTANT_PROVIDER = "both"
@@ -339,6 +340,33 @@ def voice_assist_enabled() -> bool:
 
 def set_voice_assist(enabled: bool) -> None:
     set_value("voice-assist", "on" if enabled else "off")
+
+
+def _coerce_output_volume(value) -> int:
+    if type(value) is int:
+        volume = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        volume = int(value.strip())
+    else:
+        raise ValueError("output-volume must be an integer between 0 and 100")
+    if not (0 <= volume <= 100):
+        raise ValueError("output-volume must be an integer between 0 and 100")
+    return volume
+
+
+def output_volume() -> int:
+    """The persisted speech output volume on a 0-100 scale."""
+
+    stored = load().get("output-volume")
+    try:
+        return _coerce_output_volume(stored)
+    except ValueError:
+        return DEFAULT_OUTPUT_VOLUME
+
+
+def set_output_volume(value: int) -> None:
+    volume = _coerce_output_volume(value)
+    set_value("output-volume", volume)
 
 
 def assistant_auto_submit_enabled() -> bool:

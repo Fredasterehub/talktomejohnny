@@ -152,6 +152,32 @@ class ConfigSettingsTests(unittest.TestCase):
         config.set_value("assistant-provider", "other")
         self.assertEqual(config.assistant_provider(), "both")
 
+    def test_output_volume_defaults_round_trips_and_preserves_other_settings(self) -> None:
+        self.assertEqual(config.output_volume(), 100)
+        config.set_assistant_provider("codex")
+
+        config.set_output_volume(63)
+
+        self.assertEqual(config.output_volume(), 63)
+        self.assertEqual(config.load()["output-volume"], 63)
+        self.assertEqual(config.assistant_provider(), "codex")
+
+    def test_output_volume_rejects_invalid_values_without_mutation(self) -> None:
+        config.set_output_volume(45)
+        before = config.load()
+
+        for invalid in (-1, 101, 2.5, True, "loud"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                config.set_output_volume(invalid)  # type: ignore[arg-type]
+
+        self.assertEqual(config.load(), before)
+
+    def test_corrupt_output_volume_falls_back_without_rewriting_it(self) -> None:
+        config.set_value("output-volume", "loud")
+
+        self.assertEqual(config.output_volume(), 100)
+        self.assertEqual(config.load()["output-volume"], "loud")
+
     def test_control_keybinding_defaults_normalizes_and_round_trips(self) -> None:
         self.assertEqual(config.control_hotkey(), "ctrl+alt+space")
         config.set_control_keybinding(" Control + ? ")

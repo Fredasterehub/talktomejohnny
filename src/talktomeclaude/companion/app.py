@@ -749,9 +749,15 @@ def build_headless_controller() -> CompanionController:
     def record_audio_fault(fault: Any) -> None:
         diagnostics.record("audio_fault", error_code=fault.code.value)
 
+    holder: dict[str, CompanionController] = {}
+
+    def record_input_level(level: float) -> None:
+        holder["controller"].set_input_level(level)
+
     microphone = DedicatedAudioInput(
         capture,
         on_fault=record_audio_fault,
+        on_level=record_input_level,
     )
 
     def record_stt_status(message: str) -> None:
@@ -761,11 +767,11 @@ def build_headless_controller() -> CompanionController:
         config.stt_device(),
         status=record_stt_status,
     )
-    holder: dict[str, CompanionController] = {}
     speech = CompanionSpeech.create(
         _selected_voice(),
         root / "oral-session.json",
         initially_muted=not config.voice_assist_enabled(),
+        output_volume=config.output_volume(),
         on_answer_finished=lambda: holder["controller"].speech_finished(),
     )
     inbox = _build_production_reply_inbox(
@@ -789,7 +795,9 @@ def build_headless_controller() -> CompanionController:
         capture_mode=mode,
         assistant_auto_submit=config.assistant_auto_submit_enabled(),
         output_muted=not config.voice_assist_enabled(),
+        output_volume=config.output_volume(),
         persist_output_muted=lambda muted: config.set_voice_assist(not muted),
+        persist_output_volume=config.set_output_volume,
     )
     holder["controller"] = controller
     return controller
@@ -820,7 +828,17 @@ def build_desktop_application() -> DesktopCompanionApplication:
     def record_audio_fault(fault: Any) -> None:
         diagnostics.record("audio_fault", error_code=fault.code.value)
 
-    microphone = DedicatedAudioInput(capture, on_fault=record_audio_fault)
+    holder: dict[str, Any] = {}
+
+    # Route live capture level into controller snapshots without storing audio.
+    def record_input_level(level: float) -> None:
+        holder["controller"].set_input_level(level)
+
+    microphone = DedicatedAudioInput(
+        capture,
+        on_fault=record_audio_fault,
+        on_level=record_input_level,
+    )
 
     def record_stt_status(message: str) -> None:
         diagnostics.record("stt_status", status=_safe_stt_status(message))
@@ -830,11 +848,11 @@ def build_desktop_application() -> DesktopCompanionApplication:
         status=record_stt_status,
     )
     selected_voice = _selected_voice()
-    holder: dict[str, Any] = {}
     speech = CompanionSpeech.create(
         selected_voice,
         root / "oral-session.json",
         initially_muted=not config.voice_assist_enabled(),
+        output_volume=config.output_volume(),
         on_answer_finished=lambda: holder["controller"].speech_finished(),
     )
     inbox = _build_production_reply_inbox(
@@ -880,7 +898,9 @@ def build_desktop_application() -> DesktopCompanionApplication:
         capture_mode=mode,
         assistant_auto_submit=config.assistant_auto_submit_enabled(),
         output_muted=not config.voice_assist_enabled(),
+        output_volume=config.output_volume(),
         persist_output_muted=lambda muted: config.set_voice_assist(not muted),
+        persist_output_volume=config.set_output_volume,
     )
     holder["controller"] = controller
     shell = TkCompanionShell(controller.dispatch, controller.snapshot)
@@ -908,9 +928,12 @@ def build_desktop_application() -> DesktopCompanionApplication:
             persist=config.set_control_keybinding,
         )
 
+    def set_output_volume(value: int) -> None:
+        controller.set_output_volume(value)
+
     surface_holder["surfaces"] = TkCompanionSurfaces(
         shell.root,
-        VoiceSettingsService(),
+        VoiceSettingsService(activate_voice=speech.set_voice),
         diagnostics,
         get_control_binding=config.control_hotkey,
         set_control_binding=set_control_keybinding,
@@ -920,6 +943,8 @@ def build_desktop_application() -> DesktopCompanionApplication:
         set_recording_mode=set_recording_mode,
         get_assistant_provider=config.assistant_provider,
         set_assistant_provider=set_assistant_provider,
+        get_output_volume=config.output_volume,
+        set_output_volume=set_output_volume,
     )
 
     def open_review() -> None:

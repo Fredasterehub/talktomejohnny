@@ -22,6 +22,7 @@ from typing import Any
 
 _IS_WINDOWS = sys.platform == "win32"
 _NATIVE_PATH = type(Path())
+_WINDOWS_REPLACE_RETRY_SECONDS = 0.5
 
 
 class AtomicStorageError(RuntimeError):
@@ -278,6 +279,7 @@ class AtomicJsonTransaction:
             prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
         )
         temporary = _NATIVE_PATH(temporary_name)
+        primary_error: BaseException | None = None
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(encoded)
@@ -286,12 +288,42 @@ class AtomicJsonTransaction:
                 os.fsync(handle.fileno())
             self._phase("after_temp_flush")
             self._phase("before_replace")
-            os.replace(temporary, self.path)
+            self._replace_with_retry(temporary)
             self._phase("after_replace")
             if self.path.read_bytes() != encoded:
                 raise AtomicStorageError("atomic replacement verification failed")
+        except BaseException as exc:
+            primary_error = exc
+            raise
         finally:
             try:
                 temporary.unlink()
             except FileNotFoundError:
                 pass
+            except OSError:
+                if primary_error is None:
+                    raise
+
+    def _replace_with_retry(self, temporary: Path) -> None:
+        """Tolerate short-lived Windows scanner locks without hiding real failures."""
+
+        deadline: float | None = None
+        delay = 0.005
+        while True:
+            try:
+                os.replace(temporary, self.path)
+                return
+            except PermissionError:
+                if not _IS_WINDOWS:
+                    raise
+                now = time.monotonic()
+                if deadline is None:
+                    deadline = now + min(
+                        max(0.0, self.timeout),
+                        _WINDOWS_REPLACE_RETRY_SECONDS,
+                    )
+                remaining = deadline - now
+                if remaining <= 0:
+                    raise
+                time.sleep(min(delay, remaining))
+                delay = min(delay * 2, 0.05)

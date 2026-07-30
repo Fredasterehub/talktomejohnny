@@ -46,7 +46,16 @@ class _OfferQueue(Protocol):
 
 
 class _RuntimeOwner(Protocol):
+    @property
+    def selected_voice(self) -> str: ...
+
+    def switch_voice(self, selected_voice: str, parent_state: object) -> object: ...
+
     def shutdown(self) -> bool: ...
+
+
+class _VolumeControl(Protocol):
+    def set_volume(self, volume: int) -> None: ...
 
 
 class _MuteGate:
@@ -103,10 +112,12 @@ class CompanionSpeech:
         runtime: _RuntimeOwner,
         *,
         on_answer_finished: Callable[[], None],
+        playback: _VolumeControl | None = None,
     ) -> None:
         self._controller = controller
         self._session = session
         self._gate = gate
+        self._playback = playback
         self._runtime = runtime
         self._on_answer_finished = on_answer_finished
         self._active_answer_id: str | None = None
@@ -127,15 +138,17 @@ class CompanionSpeech:
         initially_muted: bool = False,
         worker_factory: Callable[[str], SynthesisWorker] = production_synthesis_worker,
         playback: SoundDevicePlayback | None = None,
+        output_volume: int = 100,
     ) -> "CompanionSpeech":
         """Build the callback cycle without exposing partially initialized owners."""
 
         runtime = PersistentSpeechRuntime(selected_voice, worker_factory)
         session = OralSessionStore(session_path)
         holder: dict[str, CompanionSpeech] = {}
+        playback = playback or SoundDevicePlayback(volume=output_volume)
         pipeline = SpeechPipeline(
             runtime,
-            playback or SoundDevicePlayback(),
+            playback,
             on_unit_completed=lambda unit_id: holder["owner"]._unit_completed(unit_id),
         )
         gate = _MuteGate(pipeline, muted=initially_muted)
@@ -146,6 +159,7 @@ class CompanionSpeech:
             gate,
             runtime,
             on_answer_finished=on_answer_finished,
+            playback=playback,
         )
         holder["owner"] = owner
         return owner
@@ -284,12 +298,30 @@ class CompanionSpeech:
             if control is Control.GO_BACK and not response_offered:
                 self._controller.schedule_active()
             self._last_interrupted_answer_id = None
-
             return SpeechControlOutcome(
                 True,
                 response_offered
                 or (state is not None and state.status is OralStatus.ACTIVE),
             )
+
+    def set_volume(self, volume: int) -> None:
+        with self._lock:
+            if self._closed or self._playback is None:
+                return
+            self._playback.set_volume(volume)
+
+    def set_voice(self, selected_voice: str) -> None:
+        """Stop the current utterance and bind future speech to one exact voice."""
+
+        if not isinstance(selected_voice, str) or not selected_voice.strip():
+            raise ValueError("selected voice must not be empty")
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("speech presentation is closed")
+            if self._runtime.selected_voice == selected_voice:
+                return
+            self.interrupt()
+            self._runtime.switch_voice(selected_voice, None)
 
     def stop(self) -> None:
         with self._lock:

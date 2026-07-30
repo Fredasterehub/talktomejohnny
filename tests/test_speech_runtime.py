@@ -144,6 +144,102 @@ class PersistentSpeechRuntimeTests(unittest.TestCase):
         self.assertEqual(workers[0].terminated, 1)
         self.assertEqual(workers[0].killed, 0)
 
+    def test_voice_switch_stages_exact_replacement_and_reaps_old_worker(self) -> None:
+        workers: list[_Worker] = []
+        voices: list[str] = []
+
+        def factory(voice: str) -> _Worker:
+            voices.append(voice)
+            worker = _Worker()
+            workers.append(worker)
+            return worker
+
+        runtime = PersistentSpeechRuntime("rick", factory)
+
+        result = runtime.switch_voice("gimli", {"cursor": 4})
+        runtime.submit(
+            SynthesisRequest(1, "unit", "content stays outside diagnostics"),
+            lambda _result: None,
+        )
+
+        self.assertEqual(voices, ["rick", "gimli"])
+        self.assertEqual(runtime.selected_voice, "gimli")
+        self.assertEqual(result.selected_voice, "gimli")
+        self.assertEqual(result.parent_state, {"cursor": 4})
+        self.assertEqual(workers[0].terminated, 1)
+        self.assertEqual(len(workers[1].requests), 1)
+
+    def test_voice_switch_creation_failure_keeps_old_worker_and_voice_available(self) -> None:
+        workers: list[_Worker] = []
+        voices: list[str] = []
+
+        def factory(voice: str) -> _Worker:
+            voices.append(voice)
+            if voice == "broken":
+                raise RuntimeError("private model path")
+            worker = _Worker()
+            workers.append(worker)
+            return worker
+
+        runtime = PersistentSpeechRuntime("rick", factory)
+
+        with self.assertRaisesRegex(
+            SpeechRuntimeError, "selected voice worker initialization failed"
+        ):
+            runtime.switch_voice("broken", None)
+        runtime.submit(
+            SynthesisRequest(1, "unit", "canonical reply"),
+            lambda _result: None,
+        )
+
+        self.assertEqual(voices, ["rick", "broken"])
+        self.assertEqual(runtime.selected_voice, "rick")
+        self.assertEqual(workers[0].terminated, 0)
+        self.assertEqual(len(workers[0].requests), 1)
+
+    def test_voice_switch_reap_failure_keeps_old_worker_and_voice_available(self) -> None:
+        workers: list[_Worker] = []
+
+        def factory(_voice: str) -> _Worker:
+            worker = _Worker(wait_forever=not workers)
+            workers.append(worker)
+            return worker
+
+        runtime = PersistentSpeechRuntime(
+            "rick",
+            factory,
+            shutdown_deadline_seconds=0.01,
+        )
+
+        with self.assertRaisesRegex(
+            SpeechRuntimeError, "speech worker could not be reaped"
+        ):
+            runtime.switch_voice("gimli", None)
+        runtime.submit(
+            SynthesisRequest(1, "unit", "canonical reply"),
+            lambda _result: None,
+        )
+
+        self.assertEqual(runtime.selected_voice, "rick")
+        self.assertEqual(len(workers[0].requests), 1)
+        self.assertGreaterEqual(workers[1].terminated, 1)
+
+    def test_voice_switch_to_current_voice_is_a_noop(self) -> None:
+        worker = _Worker()
+        voices: list[str] = []
+
+        def factory(voice: str) -> _Worker:
+            voices.append(voice)
+            return worker
+
+        runtime = PersistentSpeechRuntime("rick", factory)
+
+        result = runtime.switch_voice("rick", object())
+
+        self.assertEqual(voices, ["rick"])
+        self.assertEqual(worker.terminated, 0)
+        self.assertEqual(result.selected_voice, "rick")
+
     def test_restart_reserves_time_to_kill_reap_and_replace_worker(self) -> None:
         workers: list[_Worker] = []
         voices: list[str] = []

@@ -183,6 +183,7 @@ class SoundDevicePlayback:
         sounddevice_module: Any | None = None,
         numpy_module: Any | None = None,
         abort_deadline_seconds: float | None = None,
+        volume: int = 100,
     ) -> None:
         deadline = (
             DEFAULT_DEADLINES[DeadlineName.PLAYBACK_STOP].seconds
@@ -191,6 +192,8 @@ class SoundDevicePlayback:
         )
         if deadline <= 0:
             raise ValueError("playback abort deadline must be positive")
+        if type(volume) is not int or not 0 <= volume <= 100:
+            raise ValueError("output volume must be an integer between 0 and 100")
         self._sounddevice = sounddevice_module
         self._numpy = numpy_module
         self._abort_deadline = deadline
@@ -198,6 +201,7 @@ class SoundDevicePlayback:
         self._next_token = 0
         self._active_token: int | None = None
         self._stream: Any | None = None
+        self._volume = volume / 100
         self._silence = threading.Event()
         self._silence.set()
 
@@ -248,6 +252,7 @@ class SoundDevicePlayback:
                 numpy = numpy_module
             if sounddevice is None:
                 sounddevice = importlib.import_module("sounddevice")
+            self._numpy = numpy
             samples = numpy.frombuffer(frames, dtype=numpy.int16)
             if channels > 1:
                 samples = samples.reshape(-1, channels)
@@ -270,10 +275,13 @@ class SoundDevicePlayback:
                     end = min(start + frame_count, len(samples))
                     count = end - start
                     outdata.fill(0)
+                    chunk = samples[start:end]
+                    if chunk.size:
+                        chunk = self._scaled(chunk, numpy)
                     if channels == 1:
-                        outdata[:count, 0] = samples[start:end]
+                        outdata[:count, 0] = chunk
                     else:
-                        outdata[:count, :] = samples[start:end, :]
+                        outdata[:count, :] = chunk
                     position[0] = end
                     if end >= len(samples):
                         raise sounddevice.CallbackStop
@@ -314,7 +322,7 @@ class SoundDevicePlayback:
                 if notify:
                     stream.stop()
             else:
-                stream.write(samples)
+                stream.write(self._scaled(samples, numpy))
                 stream.stop()
         except Exception:
             outcome = PlaybackOutcome.DEVICE_LOST
@@ -337,6 +345,22 @@ class SoundDevicePlayback:
                     complete(outcome)
                 except Exception:
                     pass
+
+    def set_volume(self, volume: int) -> None:
+        """Update playback gain for future and in-flight output."""
+
+        if type(volume) is not int or not 0 <= volume <= 100:
+            raise ValueError("output volume must be an integer between 0 and 100")
+        with self._lock:
+            self._volume = volume / 100
+
+    def _scaled(self, samples, numpy):
+        with self._lock:
+            volume = self._volume
+        if volume == 1.0:
+            return samples
+        scaled = samples.astype(numpy.float32) * volume
+        return numpy.clip(scaled, -32768, 32767).astype(samples.dtype)
 
     def abort(self) -> bool:
         started = time.monotonic()

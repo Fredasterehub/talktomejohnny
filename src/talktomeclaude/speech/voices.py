@@ -310,6 +310,14 @@ def synthesize(
     )
 
 
+def _scale_to_volume(samples, numpy, volume: int):
+    gain = max(0.0, min(1.0, volume / 100))
+    if gain == 1.0:
+        return samples
+    scaled = samples.astype(numpy.float32) * gain
+    return numpy.clip(scaled, -32768, 32767).astype(samples.dtype)
+
+
 def play_wav(path: Path) -> None:
     """Play a WAV file through the default output device, blocking."""
     import wave
@@ -319,12 +327,17 @@ def play_wav(path: Path) -> None:
         import sounddevice
     except (ImportError, OSError) as exc:
         raise TTSError(f"audio playback unavailable ({exc})") from exc
+    from talktomeclaude import config
+
     with wave.open(str(path), "rb") as handle:
         frames = handle.readframes(handle.getnframes())
         samples = numpy.frombuffer(frames, dtype=numpy.int16)
         channels = handle.getnchannels()
         if channels > 1:
             samples = samples.reshape(-1, channels)
+        volume = config.output_volume()
+        if volume < 100:
+            samples = _scale_to_volume(samples, numpy, volume)
         sounddevice.play(samples, samplerate=handle.getframerate(), blocking=True)
 
 

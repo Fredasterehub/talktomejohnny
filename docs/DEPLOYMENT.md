@@ -130,7 +130,10 @@ For Windows speech and voice changes, verify:
 
 1. The local speech stack still starts.
 2. The configured voice renders a non-empty WAV.
-3. The assistant reply path still round-trips through the exact attached
+3. The companion can switch to a different voice while already running, without
+   restarting.
+4. Spoken output volume changes affect both live replies and previews.
+5. The assistant reply path still round-trips through the exact attached
    session.
 
 For SSH changes, verify:
@@ -166,6 +169,7 @@ touch deployment:
 - Python, Torch, CUDA, and GPU versions for hardware checks
 - STT tier actually used
 - cloned voice actually rendered and WAV size was non-zero
+- live voice-switch and output-volume checks completed successfully
 - remote assistant round-trip result
 - known optional engines or physical microphone paths not tested
 - explicit companion, headless, and legacy dashboard launch and clean-exit

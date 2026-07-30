@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import inspect
 import os
+import sys
+import tempfile
 import unittest
+import wave
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from talktomeclaude import clone, f5, tts
@@ -78,6 +82,35 @@ class TTSFacadeTests(unittest.TestCase):
             synthesize_fn=tts.synthesize,
             play_wav_fn=tts.play_wav,
         )
+
+    def test_voice_preview_playback_honors_persisted_output_volume(self) -> None:
+        import numpy as np
+
+        captured: list[tuple[object, int, bool]] = []
+        sounddevice = SimpleNamespace(
+            play=lambda samples, *, samplerate, blocking: captured.append(
+                (np.array(samples, copy=True), samplerate, blocking)
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "preview.wav"
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(16_000)
+                handle.writeframes(
+                    np.array([20_000, -20_000], dtype=np.int16).tobytes()
+                )
+
+            with mock.patch.dict(sys.modules, {"sounddevice": sounddevice}), mock.patch(
+                "talktomeclaude.config.output_volume", return_value=25
+            ):
+                voices.play_wav(path)
+
+        samples, sample_rate, blocking = captured[0]
+        self.assertEqual(samples.tolist(), [5_000, -5_000])
+        self.assertEqual(sample_rate, 16_000)
+        self.assertTrue(blocking)
 
 
 if __name__ == "__main__":

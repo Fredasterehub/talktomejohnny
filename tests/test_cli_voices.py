@@ -123,6 +123,26 @@ class VoiceCliTests(unittest.TestCase):
             "?",
         )
 
+    def test_config_output_volume_round_trips_and_rejects_invalid_values(self) -> None:
+        default = self.runner.invoke(main, ["config", "get", "output-volume"])
+        self.assertEqual(default.exit_code, 0, default.output)
+        self.assertEqual(default.output.strip(), "100")
+
+        changed = self.runner.invoke(main, ["config", "set", "output-volume", "37"])
+        self.assertEqual(changed.exit_code, 0, changed.output)
+        self.assertEqual(
+            self.runner.invoke(main, ["config", "get", "output-volume"]).output.strip(),
+            "37",
+        )
+
+        invalid = self.runner.invoke(main, ["config", "set", "output-volume", "101"])
+        self.assertNotEqual(invalid.exit_code, 0)
+        self.assertIn("between 0 and 100", invalid.output)
+        self.assertEqual(
+            self.runner.invoke(main, ["config", "get", "output-volume"]).output.strip(),
+            "37",
+        )
+
     def test_speak_consumes_configured_default_voice(self) -> None:
         self.runner.invoke(main, ["config", "set", "default-voice", "en_US-ljspeech-high"])
         with mock.patch("talktomeclaude.cli.synthesize") as synth:

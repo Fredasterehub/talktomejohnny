@@ -610,6 +610,130 @@ class SoundDevicePlaybackTests(unittest.TestCase):
             self.assertTrue(playback.silence_confirmed)
             release_writer.set()
 
+    def test_volume_scales_playback_samples_without_touching_device_state(self) -> None:
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audio.wav"
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(16000)
+                handle.writeframes(np.array([20000, -20000], dtype=np.int16).tobytes())
+
+            written = threading.Event()
+            captured: list[np.ndarray] = []
+
+            class Stream:
+                def start(self) -> None:
+                    pass
+
+                def write(self, samples: object) -> None:
+                    captured.append(np.array(samples, copy=True))
+                    written.set()
+
+                def stop(self) -> None:
+                    pass
+
+                def abort(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            class SoundDevice:
+                OutputStream = staticmethod(lambda **_kwargs: Stream())
+
+            playback = SoundDevicePlayback(
+                sounddevice_module=SoundDevice(),
+                numpy_module=np,
+                volume=50,
+            )
+            playback.start(
+                SpeechArtifact(generation=0, unit_id="unit", payload=path),
+                lambda _outcome: None,
+            )
+
+            self.assertTrue(written.wait(1))
+            self.assertEqual(captured[0].tolist(), [10000, -10000])
+            self.assertTrue(playback.silence_confirmed)
+
+    def test_callback_playback_uses_thread_safe_live_volume_updates(self) -> None:
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audio.wav"
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(16000)
+                handle.writeframes(
+                    np.array([20000, -20000, 16000, -16000], dtype=np.int16).tobytes()
+                )
+
+            first_rendered = threading.Event()
+            continue_rendering = threading.Event()
+            finished = threading.Event()
+            captured: list[np.ndarray] = []
+
+            class CallbackStop(Exception):
+                pass
+
+            class Stream:
+                def __init__(self, *, callback, finished_callback, **_kwargs) -> None:
+                    self.callback = callback
+                    self.finished_callback = finished_callback
+
+                def start(self) -> None:
+                    first = np.zeros((2, 1), dtype=np.int16)
+                    self.callback(first, 2, None, None)
+                    captured.append(first.copy())
+                    first_rendered.set()
+                    continue_rendering.wait(1)
+                    second = np.zeros((2, 1), dtype=np.int16)
+                    try:
+                        self.callback(second, 2, None, None)
+                    except CallbackStop:
+                        pass
+                    captured.append(second.copy())
+                    self.finished_callback()
+
+                def stop(self) -> None:
+                    pass
+
+                def abort(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            class SoundDevice:
+                OutputStream = Stream
+
+            SoundDevice.CallbackStop = CallbackStop
+            playback = SoundDevicePlayback(
+                sounddevice_module=SoundDevice(),
+                numpy_module=np,
+                volume=100,
+            )
+            playback.start(
+                SpeechArtifact(generation=0, unit_id="unit", payload=path),
+                lambda _outcome: finished.set(),
+            )
+            self.assertTrue(first_rendered.wait(1))
+
+            playback.set_volume(50)
+            continue_rendering.set()
+
+            self.assertTrue(finished.wait(1))
+            self.assertEqual(captured[0].reshape(-1).tolist(), [20000, -20000])
+            self.assertEqual(captured[1].reshape(-1).tolist(), [8000, -8000])
+
+    def test_output_volume_validation_is_strict(self) -> None:
+        for invalid in (-1, 101, 2.5, True, "50"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                SoundDevicePlayback(volume=invalid)  # type: ignore[arg-type]
+
 
 if __name__ == "__main__":
     unittest.main()

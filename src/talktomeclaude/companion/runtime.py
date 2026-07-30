@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -54,6 +55,8 @@ class SpeechPresentation(Protocol):
 
     def stop(self) -> None: ...
 
+    def set_volume(self, volume: int) -> None: ...
+
     def shutdown(self) -> bool: ...
 
 
@@ -72,6 +75,15 @@ class ReplyInbox(Protocol):
 SurfaceAction = Callable[[], None]
 SnapshotListener = Callable[[CompanionSnapshot], None]
 WorkerStarter = Callable[[str, Callable[[], None]], object]
+
+
+def _normalize_microphone_level(rms: float) -> float:
+    """Map float32 input RMS to a useful 0-1 meter using -60 dBFS as silence."""
+
+    if not math.isfinite(rms) or rms <= 0.001:
+        return 0.0
+    dbfs = 20.0 * math.log10(min(1.0, rms))
+    return min(1.0, max(0.0, (dbfs + 60.0) / 60.0))
 
 
 def _start_daemon(name: str, target: Callable[[], None]) -> threading.Thread:
@@ -116,12 +128,16 @@ class CompanionController:
         delivery_mode: DeliveryMode = DeliveryMode.ASSISTANT,
         assistant_auto_submit: bool = True,
         output_muted: bool = False,
+        output_volume: int = 100,
         persist_output_muted: Callable[[bool], None] | None = None,
+        persist_output_volume: Callable[[int], None] | None = None,
         worker_starter: WorkerStarter = _start_daemon,
         shutdown_deadline_seconds: float = 1.5,
     ) -> None:
         if shutdown_deadline_seconds <= 0:
             raise ValueError("shutdown deadline must be positive")
+        if type(output_volume) is not int or not 0 <= output_volume <= 100:
+            raise ValueError("output volume must be an integer between 0 and 100")
         self._capture = capture
         self._microphone = microphone
         self._transcriber_factory = transcriber_factory
@@ -133,7 +149,9 @@ class CompanionController:
         self._delivery_mode = delivery_mode
         self._auto_submit = assistant_auto_submit
         self._output_muted = output_muted
+        self._output_volume = output_volume
         self._persist_output_muted = persist_output_muted
+        self._persist_output_volume = persist_output_volume
         self._start_worker = worker_starter
         self._shutdown_deadline = shutdown_deadline_seconds
         self._listeners: list[SnapshotListener] = []
@@ -148,14 +166,19 @@ class CompanionController:
         self._cancel_event = threading.Event()
         self._worker_count = 0
         self._shutdown_clean = True
+        self._microphone_level = 0.0
+        self._microphone_level_last_publish: float | None = None
+        self._microphone_level_publish_interval_seconds = 0.1
 
     @property
     def snapshot(self) -> CompanionSnapshot:
         with self._lock:
             return CompanionSnapshot(
-                self._capture.runtime.state,
-                self._detail,
-                self._output_muted,
+                runtime=self._capture.runtime.state,
+                detail=self._detail,
+                output_muted=self._output_muted,
+                output_volume=self._output_volume,
+                microphone_level=self._microphone_level,
             )
 
     @property
@@ -216,6 +239,11 @@ class CompanionController:
         self._set_detail(f"Recording control: {mode.value}")
         self._publish()
 
+    def set_output_volume(self, volume: int) -> CompanionSnapshot:
+        self._set_output_volume(volume)
+        self._set_detail(f"Output volume set to {volume}")
+        return self._publish()
+
     def dispatch(self, intent: CompanionIntent) -> CompanionSnapshot:
         if intent.kind is IntentKind.STATUS:
             return self.snapshot
@@ -269,6 +297,9 @@ class CompanionController:
             if phase in self._INTERRUPTIBLE_SPEECH and self._speech is not None:
                 self._speech.interrupt()
             self._capture.start(capture_mode)
+            with self._lock:
+                self._microphone_level = 0.0
+                self._microphone_level_last_publish = None
             try:
                 self._microphone.start()
             except BaseException:
@@ -321,6 +352,7 @@ class CompanionController:
                     with self._lock:
                         self._finish_inflight = False
         self._set_detail("Transcribing locally")
+        self._set_microphone_level(0.0)
         current = self._publish()
 
         def process() -> None:
@@ -452,6 +484,7 @@ class CompanionController:
             self._capture.cancel()
         with self._lock:
             self._pending_review = None
+        self._set_microphone_level(0.0)
         self._set_detail("Cancelled")
         return self._publish()
 
@@ -479,6 +512,30 @@ class CompanionController:
             self._speech.set_muted(muted)
         if changed and self._persist_output_muted is not None:
             self._persist_output_muted(muted)
+
+    def _set_output_volume(self, volume: int) -> None:
+        if type(volume) is not int or not 0 <= volume <= 100:
+            raise ValueError("output volume must be an integer between 0 and 100")
+        with self._lock:
+            changed = self._output_volume != volume
+            if not changed:
+                return
+            previous = self._output_volume
+            if self._persist_output_volume is not None:
+                self._persist_output_volume(volume)
+            try:
+                if self._speech is not None:
+                    self._speech.set_volume(volume)
+            except Exception:
+                if self._persist_output_volume is not None:
+                    self._persist_output_volume(previous)
+                raise
+            self._output_volume = volume
+
+    def _set_microphone_level(self, level: float) -> None:
+        normalized = _normalize_microphone_level(float(level))
+        with self._lock:
+            self._microphone_level = normalized
 
     def receive_reply(self, event: ReplyEvent) -> bool:
         """Admit one durable reply and report whether its local effect committed."""
@@ -580,6 +637,24 @@ class CompanionController:
             self._set_detail("Shutdown incomplete; an owned boundary is still live")
             self._record_error("shutdown_incomplete")
         return self._publish()
+
+    def set_input_level(self, level: float) -> None:
+        """Publish live microphone level while recording, without storing audio."""
+
+        now = time.monotonic()
+        publish = False
+        with self._lock:
+            phase = self._capture.runtime.state.phase
+            if phase is not RuntimePhase.RECORDING:
+                return
+            self._microphone_level = _normalize_microphone_level(float(level))
+            last_publish = self._microphone_level_last_publish
+            interval = self._microphone_level_publish_interval_seconds
+            if last_publish is None or now - last_publish >= interval:
+                self._microphone_level_last_publish = now
+                publish = True
+        if publish:
+            self._publish()
 
     def _start_owned_worker(self, name: str, target: Callable[[], None]) -> object:
         with self._worker_condition:

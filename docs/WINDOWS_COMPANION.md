@@ -142,11 +142,32 @@ is always delivered as dictation, while low-confidence, edited, safety-stop, and
 recovery text remains in the explicit review flow and is never silently
 reinterpreted as a control.
 
+## Live mic telemetry
+
+The Matrix Deck view shows live microphone level and waveform telemetry while
+you are recording. It is content-free status data only; the companion does not
+retain or replay the captured audio just to draw the meter.
+
+## Spoken output volume
+
+Open Settings to change spoken output volume separately from microphone gain.
+The slider runs from `0` to `100` and applies to spoken replies and voice
+previews. The same value is available from the CLI:
+
+```powershell
+talktomejohnny config get output-volume
+talktomejohnny config set output-volume 75
+```
+
 ## Voice settings and import
 
 Open Voice to see bundled and registered voices with written
 `AVAILABLE`/`UNAVAILABLE`/`FAULT` status. Select persists the voice
-transactionally; Preview auditions it immediately. Import guides either:
+transactionally and applies it to the running companion without a restart;
+Preview auditions it immediately. If the active voice is already speaking, the
+companion stops and parks that reply before committing the new voice. A failed
+activation restores the prior selection and does not fall back silently. Import
+guides either:
 
 - a cloned voice from a local reference-audio file; or
 - a Piper `.onnx` model with its adjacent `.onnx.json` file, or an explicitly
@@ -159,6 +180,9 @@ registration. Existing registered voices, reference audio, and model caches are
 not replacement or cleanup targets. The companion never silently changes to a
 fallback voice; an unavailable selected voice produces a visible startup error
 and leaves the selection unchanged.
+
+Model keep-warm and reply-latency optimization remain deferred until they are
+deliberately revisited.
 
 ## Diagnostics and recovery
 

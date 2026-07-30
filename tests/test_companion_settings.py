@@ -16,6 +16,7 @@ from talktomeclaude.companion.settings import (
     DuplicateVoiceError,
     SettingsStore,
     VoiceAvailability,
+    VoiceActivationError,
     VoiceFaultCode,
     VoiceFlowCancelled,
     VoiceFlowStep,
@@ -117,6 +118,7 @@ def _service(
     bundled: tuple[Voice, ...] = (),
     preview=lambda _name, _text: None,
     available=lambda _voice: True,
+    activate=lambda _name: None,
 ) -> VoiceSettingsService:
     def resolve(name: str) -> Voice:
         for voice in bundled:
@@ -134,6 +136,7 @@ def _service(
         resolve_voice=resolve,
         is_available=available,
         preview_worker=preview,
+        activate_voice=activate,
     )
 
 
@@ -191,6 +194,40 @@ def test_select_voice_is_atomic_and_preserves_unrelated_settings(tmp_path: Path)
         "future-setting": {"kept": True},
         "default-voice": "rick",
     }
+
+
+def test_select_voice_applies_to_live_runtime_after_persisting(tmp_path: Path) -> None:
+    fake = FakeRegistry([_registered("rick"), _registered("gimli")])
+    store = ConfigStore(tmp_path / "config.json")
+    store.save({"default-voice": "rick"})
+    activations: list[tuple[str, str]] = []
+
+    def activate(name: str) -> None:
+        activations.append((name, store.load()["default-voice"]))
+
+    service = _service(store, fake, activate=activate)
+
+    service.select_voice("GIMLI")
+
+    assert activations == [("gimli", "gimli")]
+    assert store.load()["default-voice"] == "gimli"
+
+
+def test_live_activation_failure_restores_previous_persisted_voice(tmp_path: Path) -> None:
+    fake = FakeRegistry([_registered("rick"), _registered("gimli")])
+    store = ConfigStore(tmp_path / "config.json")
+    store.save({"default-voice": "rick", "future-setting": 7})
+
+    def fail(_name: str) -> None:
+        raise RuntimeError("private worker failure")
+
+    service = _service(store, fake, activate=fail)
+
+    with raises(VoiceActivationError, match="gimli"):
+        service.select_voice("gimli")
+
+    assert store.load()["default-voice"] == "rick"
+    assert store.load()["future-setting"] == 7
 
 
 def test_preview_is_immediate_and_does_not_persist_selection(tmp_path: Path) -> None:
