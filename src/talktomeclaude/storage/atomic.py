@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 _IS_WINDOWS = sys.platform == "win32"
+_WINDOWS_REPLACE_RETRY_ENABLED = _IS_WINDOWS
 _NATIVE_PATH = type(Path())
 _WINDOWS_REPLACE_RETRY_SECONDS = 0.5
 
@@ -314,7 +315,7 @@ class AtomicJsonTransaction:
                 os.replace(temporary, self.path)
                 return
             except PermissionError:
-                if not _IS_WINDOWS:
+                if not _WINDOWS_REPLACE_RETRY_ENABLED:
                     raise
                 now = time.monotonic()
                 if deadline is None:

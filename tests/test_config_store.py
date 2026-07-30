@@ -198,7 +198,10 @@ class AtomicStorageTests(unittest.TestCase):
             real_replace(source, destination)
 
         with (
-            mock.patch("talktomeclaude.storage.atomic._IS_WINDOWS", True),
+            mock.patch(
+                "talktomeclaude.storage.atomic._WINDOWS_REPLACE_RETRY_ENABLED",
+                True,
+            ),
             mock.patch(
                 "talktomeclaude.storage.atomic.os.replace",
                 side_effect=transient_replace,
@@ -214,7 +217,10 @@ class AtomicStorageTests(unittest.TestCase):
         cleanup_denied = PermissionError(13, "temp cleanup denied")
 
         with (
-            mock.patch("talktomeclaude.storage.atomic._IS_WINDOWS", True),
+            mock.patch(
+                "talktomeclaude.storage.atomic._WINDOWS_REPLACE_RETRY_ENABLED",
+                True,
+            ),
             mock.patch(
                 "talktomeclaude.storage.atomic.os.replace",
                 side_effect=replace_denied,

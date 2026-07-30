@@ -526,15 +526,11 @@ class CompanionControllerTests(unittest.TestCase):
         self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
         baseline = len(observed)
 
-        original_monotonic = time.monotonic
         monotonic_values = iter((10.0, 10.05, 10.16))
-        time.monotonic = lambda: next(monotonic_values)
-        try:
-            self.controller.set_input_level(0.2)
-            self.controller.set_input_level(0.2)
-            self.controller.set_input_level(0.2)
-        finally:
-            time.monotonic = original_monotonic
+        self.controller._input_level_clock = lambda: next(monotonic_values)
+        self.controller.set_input_level(0.2)
+        self.controller.set_input_level(0.2)
+        self.controller.set_input_level(0.2)
 
         self.assertEqual(len(observed) - baseline, 2)
         self.assertGreater(self.controller.snapshot.microphone_level, 0.0)
@@ -543,22 +539,18 @@ class CompanionControllerTests(unittest.TestCase):
         observed: list[CompanionSnapshot] = []
         self.controller.subscribe(observed.append)
 
-        original_monotonic = time.monotonic
         monotonic_values = iter((10.0, 10.05))
-        time.monotonic = lambda: next(monotonic_values)
-        try:
-            self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
-            initial_baseline = len(observed)
-            self.controller.set_input_level(0.2)
-            self.assertEqual(len(observed) - initial_baseline, 1)
+        self.controller._input_level_clock = lambda: next(monotonic_values)
+        self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
+        initial_baseline = len(observed)
+        self.controller.set_input_level(0.2)
+        self.assertEqual(len(observed) - initial_baseline, 1)
 
-            self.controller.dispatch(CompanionIntent(IntentKind.CANCEL))
-            restart_baseline = len(observed)
-            self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
-            restart_after_start = len(observed)
-            self.controller.set_input_level(0.2)
-        finally:
-            time.monotonic = original_monotonic
+        self.controller.dispatch(CompanionIntent(IntentKind.CANCEL))
+        restart_baseline = len(observed)
+        self.controller.dispatch(CompanionIntent(IntentKind.START_RECORDING))
+        restart_after_start = len(observed)
+        self.controller.set_input_level(0.2)
 
         self.assertEqual(restart_after_start - restart_baseline, 1)
         self.assertEqual(len(observed) - restart_after_start, 1)

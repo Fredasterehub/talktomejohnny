@@ -132,6 +132,7 @@ class CompanionController:
         persist_output_muted: Callable[[bool], None] | None = None,
         persist_output_volume: Callable[[int], None] | None = None,
         worker_starter: WorkerStarter = _start_daemon,
+        input_level_clock: Callable[[], float] = time.monotonic,
         shutdown_deadline_seconds: float = 1.5,
     ) -> None:
         if shutdown_deadline_seconds <= 0:
@@ -153,6 +154,7 @@ class CompanionController:
         self._persist_output_muted = persist_output_muted
         self._persist_output_volume = persist_output_volume
         self._start_worker = worker_starter
+        self._input_level_clock = input_level_clock
         self._shutdown_deadline = shutdown_deadline_seconds
         self._listeners: list[SnapshotListener] = []
         self._lock = threading.RLock()
@@ -641,7 +643,7 @@ class CompanionController:
     def set_input_level(self, level: float) -> None:
         """Publish live microphone level while recording, without storing audio."""
 
-        now = time.monotonic()
+        now = self._input_level_clock()
         publish = False
         with self._lock:
             phase = self._capture.runtime.state.phase
