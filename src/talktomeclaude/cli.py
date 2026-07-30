@@ -617,6 +617,7 @@ def config_set(key: str, value: str) -> None:
     """Persist KEY = VALUE.
 
     Known keys: recording-mode (always-on, push-to-talk, push-toggle),
+    control-keybinding (for the global companion hotkey, e.g. ctrl+alt+space),
     voice-assist (on, off), assistant-auto-submit (on, off),
     assistant-provider (both, claude, codex),
     remote (user@host, or "local"/"none" to clear),
@@ -651,6 +652,11 @@ def config_set(key: str, value: str) -> None:
     elif key == "assistant-provider":
         try:
             settings.set_assistant_provider(value)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+    elif key == "control-keybinding":
+        try:
+            settings.set_control_keybinding(value)
         except ValueError as exc:
             raise click.ClickException(str(exc)) from exc
     elif key == "remote":
@@ -703,7 +709,7 @@ def config_set(key: str, value: str) -> None:
     else:
         raise click.ClickException(
             f"unknown setting {key!r}: expected recording-mode, voice-assist, "
-            "assistant-auto-submit, assistant-provider, remote, "
+            "assistant-auto-submit, control-keybinding, assistant-provider, remote, "
             "remote-cwd, barge-in, claude-permissions, wake-word, wake-phrase, "
             "wake-model, default-voice, stt-device, command-namespace-policy, "
             "or command-namespace-allowlist"
@@ -725,6 +731,8 @@ def config_get(key: str) -> None:
         click.echo("on" if settings.assistant_auto_submit_enabled() else "off")
     elif key == "assistant-provider":
         click.echo(settings.assistant_provider())
+    elif key == "control-keybinding":
+        click.echo(settings.control_hotkey())
     elif key == "remote":
         click.echo(settings.remote() or "local")
     elif key == "remote-cwd":
@@ -750,7 +758,7 @@ def config_get(key: str) -> None:
     else:
         raise click.ClickException(
             f"unknown setting {key!r}: expected recording-mode, voice-assist, "
-            "assistant-auto-submit, assistant-provider, remote, "
+            "assistant-auto-submit, control-keybinding, assistant-provider, remote, "
             "remote-cwd, barge-in, claude-permissions, wake-word, wake-phrase, "
             "wake-model, default-voice, stt-device, command-namespace-policy, "
             "or command-namespace-allowlist"

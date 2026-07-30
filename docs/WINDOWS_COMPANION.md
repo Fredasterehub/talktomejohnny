@@ -107,6 +107,26 @@ talktomejohnny config set recording-mode push-toggle
 talktomejohnny config set recording-mode push-to-talk
 ```
 
+## Recording shortcut
+
+Open Settings and choose **Change shortcut**, then press the key or key
+combination you want to use. The default remains `Ctrl+Alt+Space`, but a single
+printable key such as `~` or `?`, a function key, or a modified combination can
+be recorded. The new shortcut is registered as soon as Settings is saved; the
+companion does not need to restart.
+
+Single-key shortcuts are global and can activate while typing in any app. If a
+new shortcut is already owned by another process, saving fails and the previous
+shortcut remains active.
+
+The shortcut can also be inspected or changed from the CLI:
+
+```powershell
+talktomejohnny config get control-keybinding
+talktomejohnny config set control-keybinding "~"
+talktomejohnny config set control-keybinding "?"
+```
+
 ## Spoken reply controls
 
 While a reply is speaking, start a new recording to stop and park it
@@ -156,8 +176,9 @@ Common fail-closed results:
   correct.
 - Selected voice unavailable: restore the referenced assets or choose an
   available voice; the companion does not substitute one.
-- Hotkey registration failed: close the process holding `Ctrl+Alt+Space`, or
-  use headless recovery.
+- Hotkey registration failed: choose a different shortcut or close the process
+  holding the configured shortcut, then retry. Headless recovery remains
+  available.
 
 ## Recovery paths
 

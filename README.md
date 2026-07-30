@@ -237,6 +237,10 @@ remains a compatibility alias during migration.
 | `config set KEY VALUE` / `config get KEY` | Persist or read settings. |
 | `assist on|off|status` | Toggle the speech layer. |
 
+The Windows companion's recording shortcut is configurable in Settings through
+**Change shortcut**. It accepts combinations and single printable keys such as
+`~` or `?`; `Ctrl+Alt+Space` remains the default for existing installations.
+
 ## Migration notes
 
 - Existing `talktomeclaude` command lines remain supported as aliases during the

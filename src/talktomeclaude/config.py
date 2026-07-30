@@ -30,6 +30,7 @@ DEFAULT_RECORDING_MODE = "push-to-talk"
 DEFAULT_COMPANION_RECORDING_MODE = "push-toggle"
 DEFAULT_WAKE_PHRASE = "hey johnny"
 ASSISTANT_PROVIDERS = ("both", "claude", "codex")
+DEFAULT_CONTROL_KEYBINDING = "ctrl+alt+space"
 DEFAULT_ASSISTANT_PROVIDER = "both"
 CLAUDE_PERMISSIONS = ("off", "skip", "acceptEdits", "bypassPermissions")
 STT_DEVICES = ("auto", "cuda", "cpu")
@@ -366,6 +367,28 @@ def set_assistant_provider(value: str) -> None:
             f"{', '.join(ASSISTANT_PROVIDERS)}"
         )
     set_value("assistant-provider", value)
+
+
+def control_hotkey() -> str:
+    """The persisted global hotkey for push-to-talk and push-toggle."""
+
+    value = load().get("control-keybinding")
+    if not isinstance(value, str) or not value.strip():
+        return DEFAULT_CONTROL_KEYBINDING
+    from talktomeclaude.companion.hotkey import normalize_control_hotkey
+
+    try:
+        return normalize_control_hotkey(value)
+    except ValueError:
+        return DEFAULT_CONTROL_KEYBINDING
+
+
+def set_control_keybinding(binding: str) -> None:
+    """Validate and persist the canonical global companion shortcut."""
+
+    from talktomeclaude.companion.hotkey import normalize_control_hotkey
+
+    set_value("control-keybinding", normalize_control_hotkey(binding))
 
 
 def remote() -> str | None:

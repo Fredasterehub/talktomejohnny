@@ -152,6 +152,28 @@ class ConfigSettingsTests(unittest.TestCase):
         config.set_value("assistant-provider", "other")
         self.assertEqual(config.assistant_provider(), "both")
 
+    def test_control_keybinding_defaults_normalizes_and_round_trips(self) -> None:
+        self.assertEqual(config.control_hotkey(), "ctrl+alt+space")
+        config.set_control_keybinding(" Control + ? ")
+        self.assertEqual(config.control_hotkey(), "ctrl+?")
+        self.assertEqual(config.load()["control-keybinding"], "ctrl+?")
+        config.set_control_keybinding("~")
+        self.assertEqual(config.control_hotkey(), "~")
+
+    def test_invalid_control_keybinding_does_not_mutate_settings(self) -> None:
+        config.set_control_keybinding("~")
+        before = config.load()
+
+        with self.assertRaises(ValueError):
+            config.set_control_keybinding("ctrl+alt")
+
+        self.assertEqual(config.load(), before)
+
+    def test_corrupt_control_keybinding_falls_back_without_rewriting_it(self) -> None:
+        config.set_value("control-keybinding", "ctrl+alt")
+        self.assertEqual(config.control_hotkey(), "ctrl+alt+space")
+        self.assertEqual(config.load()["control-keybinding"], "ctrl+alt")
+
 
 if __name__ == "__main__":
     unittest.main()

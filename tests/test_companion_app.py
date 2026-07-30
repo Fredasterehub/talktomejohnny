@@ -15,6 +15,7 @@ from talktomeclaude.companion.app import (
     PersistentTranscriberFactory,
     _REMOTE_REPLY_COMMAND,
     _active_providers,
+    _apply_control_keybinding,
     _reply_inbox_path,
     _reply_spool_path,
     _remote_reply_command,
@@ -233,6 +234,59 @@ class HotkeyRouterTests(unittest.TestCase):
         _route_hotkey_release(controller)
 
         controller.dispatch.assert_not_called()
+
+
+class LiveControlKeybindingTests(unittest.TestCase):
+    def test_rebinds_before_persisting_the_normalized_shortcut(self) -> None:
+        hotkey = mock.Mock()
+        persisted: list[str] = []
+
+        normalized = _apply_control_keybinding(
+            " Control + ? ",
+            hotkey,
+            current_binding=lambda: "ctrl+alt+space",
+            persist=persisted.append,
+        )
+
+        self.assertEqual(normalized, "ctrl+?")
+        hotkey.rebind.assert_called_once_with(0x0002 | 0x0004, 0xBF)
+        self.assertEqual(persisted, ["ctrl+?"])
+
+    def test_registration_failure_does_not_persist_or_drop_previous_binding(
+        self,
+    ) -> None:
+        hotkey = mock.Mock()
+        hotkey.rebind.side_effect = RuntimeError("registration failed")
+        persist = mock.Mock()
+
+        with self.assertRaisesRegex(RuntimeError, "registration failed"):
+            _apply_control_keybinding(
+                "?",
+                hotkey,
+                current_binding=lambda: "ctrl+alt+space",
+                persist=persist,
+            )
+
+        persist.assert_not_called()
+        hotkey.rebind.assert_called_once_with(0x0004, 0xBF)
+
+    def test_persistence_failure_rolls_the_live_binding_back(self) -> None:
+        hotkey = mock.Mock()
+
+        with self.assertRaisesRegex(OSError, "config unavailable"):
+            _apply_control_keybinding(
+                "~",
+                hotkey,
+                current_binding=lambda: "ctrl+alt+space",
+                persist=lambda _value: (_ for _ in ()).throw(
+                    OSError("config unavailable")
+                ),
+            )
+
+        self.assertEqual(
+            hotkey.rebind.call_args_list,
+            [mock.call(0x0004, 0xC0), mock.call(0x0002 | 0x0001, 0x20)],
+        )
 
 
 class SelectedVoiceTests(unittest.TestCase):

@@ -91,6 +91,38 @@ class VoiceCliTests(unittest.TestCase):
             self.runner.invoke(main, ["config", "get", "default-voice"]).output.strip(), "rick"
         )
 
+    def test_config_control_keybinding_accepts_printable_single_keys(self) -> None:
+        default = self.runner.invoke(main, ["config", "get", "control-keybinding"])
+        self.assertEqual(default.exit_code, 0, default.output)
+        self.assertEqual(default.output.strip(), "ctrl+alt+space")
+
+        changed = self.runner.invoke(
+            main,
+            ["config", "set", "control-keybinding", "?"],
+        )
+        self.assertEqual(changed.exit_code, 0, changed.output)
+        self.assertEqual(
+            self.runner.invoke(
+                main,
+                ["config", "get", "control-keybinding"],
+            ).output.strip(),
+            "?",
+        )
+
+        invalid = self.runner.invoke(
+            main,
+            ["config", "set", "control-keybinding", "ctrl+alt"],
+        )
+        self.assertNotEqual(invalid.exit_code, 0)
+        self.assertIn("binding has no key", invalid.output)
+        self.assertEqual(
+            self.runner.invoke(
+                main,
+                ["config", "get", "control-keybinding"],
+            ).output.strip(),
+            "?",
+        )
+
     def test_speak_consumes_configured_default_voice(self) -> None:
         self.runner.invoke(main, ["config", "set", "default-voice", "en_US-ljspeech-high"])
         with mock.patch("talktomeclaude.cli.synthesize") as synth:

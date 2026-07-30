@@ -4,8 +4,19 @@ import queue
 import threading
 import unittest
 
-from talktomeclaude.companion.hotkey import ThreadHotkeyListener
-from talktomeclaude.platform.windows.hotkeys import MOD_NOREPEAT, WM_HOTKEY
+from talktomeclaude.companion.hotkey import (
+    ReconfigurableHotkeyListener,
+    ThreadHotkeyListener,
+    normalize_control_hotkey,
+    parse_control_hotkey,
+)
+from talktomeclaude.platform.windows.hotkeys import (
+    MOD_ALT,
+    MOD_CONTROL,
+    MOD_NOREPEAT,
+    MOD_SHIFT,
+    WM_HOTKEY,
+)
 
 
 class _Pump:
@@ -54,6 +65,124 @@ class _KeyState:
         if self.values:
             return self.values.pop(0)
         return self.fallback
+
+
+class _LifecycleListener:
+    def __init__(
+        self,
+        _callback: object,
+        *,
+        release_callback: object,
+        modifiers: int,
+        virtual_key: int,
+        events: list[tuple[str, int]],
+        fail_start: bool = False,
+        stop_result: bool = True,
+    ) -> None:
+        self.binding = (modifiers, virtual_key)
+        self.events = events
+        self.fail_start = fail_start
+        self.stop_result = stop_result
+
+    def start(self) -> None:
+        self.events.append(("start", self.binding[1]))
+        if self.fail_start:
+            raise RuntimeError("registration failed")
+
+    def stop(self) -> bool:
+        self.events.append(("stop", self.binding[1]))
+        return self.stop_result
+
+
+class ControlHotkeyBindingTests(unittest.TestCase):
+    def test_printable_oem_keys_include_their_physical_shift_modifier(self) -> None:
+        self.assertEqual(parse_control_hotkey("~"), (MOD_SHIFT, 0xC0))
+        self.assertEqual(parse_control_hotkey("`"), (0, 0xC0))
+        self.assertEqual(parse_control_hotkey("?"), (MOD_SHIFT, 0xBF))
+        self.assertEqual(
+            parse_control_hotkey("ctrl+?"),
+            (MOD_CONTROL | MOD_SHIFT, 0xBF),
+        )
+        self.assertEqual(parse_control_hotkey("!"), (MOD_SHIFT, ord("1")))
+
+    def test_normalizes_aliases_but_preserves_readable_single_keys(self) -> None:
+        self.assertEqual(
+            normalize_control_hotkey(" Control + ALT + spacebar "),
+            "ctrl+alt+space",
+        )
+        self.assertEqual(normalize_control_hotkey("shift+?"), "?")
+        self.assertEqual(normalize_control_hotkey("tilde"), "~")
+        self.assertEqual(normalize_control_hotkey("F12"), "f12")
+
+    def test_rejects_empty_modifier_only_and_multiple_primary_keys(self) -> None:
+        for binding in ("", "ctrl+alt", "a+b", "ctrl++"):
+            with self.subTest(binding=binding):
+                with self.assertRaises(ValueError):
+                    parse_control_hotkey(binding)
+
+    def test_live_rebind_starts_candidate_before_releasing_previous_key(self) -> None:
+        events: list[tuple[str, int]] = []
+        created: list[_LifecycleListener] = []
+
+        def factory(callback: object, **options: object) -> _LifecycleListener:
+            listener = _LifecycleListener(
+                callback,
+                release_callback=options["release_callback"],
+                modifiers=int(options["modifiers"]),
+                virtual_key=int(options["virtual_key"]),
+                events=events,
+            )
+            created.append(listener)
+            return listener
+
+        listener = ReconfigurableHotkeyListener(
+            lambda: None,
+            release_callback=lambda: None,
+            modifiers=MOD_CONTROL | MOD_ALT,
+            virtual_key=0x20,
+            listener_factory=factory,
+        )
+        listener.start()
+        listener.rebind(MOD_SHIFT, 0xC0)
+
+        self.assertEqual(
+            events,
+            [("start", 0x20), ("start", 0xC0), ("stop", 0x20)],
+        )
+        self.assertEqual(listener.binding, (MOD_SHIFT, 0xC0))
+        self.assertEqual(len(created), 2)
+        self.assertTrue(listener.stop())
+        self.assertEqual(events[-1], ("stop", 0xC0))
+
+    def test_failed_live_rebind_keeps_the_previous_key_registered(self) -> None:
+        events: list[tuple[str, int]] = []
+
+        def factory(callback: object, **options: object) -> _LifecycleListener:
+            virtual_key = int(options["virtual_key"])
+            return _LifecycleListener(
+                callback,
+                release_callback=options["release_callback"],
+                modifiers=int(options["modifiers"]),
+                virtual_key=virtual_key,
+                events=events,
+                fail_start=virtual_key == 0xBF,
+            )
+
+        listener = ReconfigurableHotkeyListener(
+            lambda: None,
+            release_callback=lambda: None,
+            modifiers=MOD_CONTROL | MOD_ALT,
+            virtual_key=0x20,
+            listener_factory=factory,
+        )
+        listener.start()
+
+        with self.assertRaisesRegex(RuntimeError, "registration failed"):
+            listener.rebind(MOD_SHIFT, 0xBF)
+
+        self.assertEqual(listener.binding, (MOD_CONTROL | MOD_ALT, 0x20))
+        self.assertNotIn(("stop", 0x20), events)
+        self.assertTrue(listener.stop())
 
 class ThreadHotkeyListenerTests(unittest.TestCase):
     def test_registers_dispatches_off_pump_thread_and_unregisters(self) -> None:

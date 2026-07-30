@@ -7,6 +7,7 @@ import time
 import unittest
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from talktomeclaude.companion.settings import (
@@ -65,6 +66,7 @@ class _Window(_Widget):
         self.calls: list[tuple[str, object]] = []
         self.protocols: dict[str, object] = {}
         self.after_callbacks: list[object] = []
+        self.bindings: dict[str, dict[str, object]] = {}
 
     def title(self, value: str) -> None:
         self.calls.append(("title", value))
@@ -83,6 +85,30 @@ class _Window(_Widget):
 
     def protocol(self, name: str, callback: object) -> None:
         self.protocols[name] = callback
+
+    def bind(
+        self,
+        sequence: str,
+        callback: object,
+        add: str | None = None,
+    ) -> str:
+        binding_id = f"binding-{len(self.bindings.get(sequence, {})) + 1}"
+        if add != "+":
+            self.bindings[sequence] = {}
+        self.bindings.setdefault(sequence, {})[binding_id] = callback
+        return binding_id
+
+    def unbind(self, sequence: str, binding_id: str | None = None) -> None:
+        if binding_id is None:
+            self.bindings.pop(sequence, None)
+            return
+        callbacks = self.bindings.get(sequence, {})
+        callbacks.pop(binding_id, None)
+
+    def emit(self, sequence: str, event: object) -> None:
+        for callback in tuple(self.bindings.get(sequence, {}).values()):
+            if callable(callback):
+                callback(event)
 
     def after(self, _milliseconds: int, callback: object) -> str:
         self.after_callbacks.append(callback)
@@ -298,11 +324,16 @@ def _surfaces(
         "auto_submit": True,
         "recording_mode": "push-toggle",
         "assistant_provider": "claude",
+        "control_binding": "ctrl+alt+space",
     }
     surface = TkCompanionSurfaces(
         object(),
         voices,
         DiagnosticStore(tmp_path / "diagnostics.json"),
+        get_control_binding=lambda: str(settings["control_binding"]),
+        set_control_binding=lambda value: settings.__setitem__(
+            "control_binding", value
+        ),
         get_auto_submit=lambda: bool(settings["auto_submit"]),
         set_auto_submit=lambda value: settings.__setitem__("auto_submit", value),
         get_recording_mode=lambda: str(settings["recording_mode"]),
@@ -352,8 +383,48 @@ def test_settings_surface_focuses_only_when_opened_and_shows_exact_warning(
         "auto_submit": False,
         "recording_mode": "push-to-talk",
         "assistant_provider": "codex",
+        "control_binding": "ctrl+alt+space",
     }
     assert surface.window.destroyed is True
+
+
+def test_settings_records_question_mark_as_a_single_global_shortcut(
+    tmp_path: Path,
+) -> None:
+    surfaces, _tk, _voices, _dialogs, _messages, settings = _surfaces(tmp_path)
+    surface = surfaces.open_settings()
+
+    surface.controls["change_control_binding"].invoke()
+    assert "Press" in surface.controls["change_control_binding"].options["text"]
+    surface.window.emit(
+        "<KeyPress>",
+        SimpleNamespace(keysym="question", char="?", state=0x0001),
+    )
+
+    assert surface.variables["control_binding"].get() == "?"
+    assert "Change" in surface.controls["change_control_binding"].options["text"]
+    assert "globally" in surface.controls["control_binding_warning"].options["text"]
+    surface.controls["save"].invoke()
+    assert settings["control_binding"] == "?"
+
+
+def test_settings_recorder_ignores_modifier_only_then_captures_tilde(
+    tmp_path: Path,
+) -> None:
+    surfaces, _tk, _voices, _dialogs, _messages, _settings = _surfaces(tmp_path)
+    surface = surfaces.open_settings()
+    surface.controls["change_control_binding"].invoke()
+
+    surface.window.emit(
+        "<KeyPress>",
+        SimpleNamespace(keysym="Shift_L", char="", state=0x0001),
+    )
+    assert surface.variables["control_binding"].get() == "ctrl+alt+space"
+    surface.window.emit(
+        "<KeyPress>",
+        SimpleNamespace(keysym="asciitilde", char="~", state=0x0001),
+    )
+    assert surface.variables["control_binding"].get() == "~"
 
 
 def test_settings_surface_defaults_unknown_provider_to_both(tmp_path: Path) -> None:

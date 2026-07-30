@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from talktomeclaude import config
 from talktomeclaude.companion.capture_delivery import TranscriptReview
+from talktomeclaude.companion.hotkey import normalize_control_hotkey
 from talktomeclaude.companion.settings import (
     AUTO_SUBMIT_WARNING,
     DEFAULT_PREVIEW_TEXT,
@@ -24,6 +25,108 @@ from talktomeclaude.companion.settings import (
     VoiceSettingsService,
 )
 from talktomeclaude.diagnostics import DiagnosticStore
+
+
+CONTROL_KEYBINDING_WARNING = (
+    "Single-key shortcuts work globally and may trigger while typing in any app. "
+    "Choose Change shortcut, then press any non-modifier key or key combination. "
+    "The new shortcut applies as soon as Settings is saved."
+)
+
+_TK_MODIFIER_KEYSYMS = frozenset(
+    {
+        "alt_l",
+        "alt_r",
+        "control_l",
+        "control_r",
+        "shift_l",
+        "shift_r",
+        "super_l",
+        "super_r",
+        "win_l",
+        "win_r",
+    }
+)
+_TK_KEYSYM_TOKENS = {
+    "space": "space",
+    "tab": "tab",
+    "return": "enter",
+    "escape": "escape",
+    "backspace": "backspace",
+    "delete": "delete",
+    "insert": "insert",
+    "home": "home",
+    "end": "end",
+    "prior": "pageup",
+    "next": "pagedown",
+    "left": "left",
+    "right": "right",
+    "up": "up",
+    "down": "down",
+    "question": "?",
+    "asciitilde": "~",
+    "grave": "`",
+    "slash": "/",
+    "plus": "plus",
+    "exclam": "!",
+    "at": "@",
+    "numbersign": "#",
+    "dollar": "$",
+    "percent": "%",
+    "asciicircum": "^",
+    "ampersand": "&",
+    "asterisk": "*",
+    "parenleft": "(",
+    "parenright": ")",
+    "underscore": "_",
+    "equal": "=",
+    "bracketleft": "[",
+    "braceleft": "{",
+    "bracketright": "]",
+    "braceright": "}",
+    "backslash": "\\",
+    "bar": "|",
+    "semicolon": ";",
+    "colon": ":",
+    "apostrophe": "'",
+    "quotedbl": '"',
+    "comma": ",",
+    "less": "<",
+    "period": ".",
+    "greater": ">",
+}
+
+
+def _control_binding_from_tk_event(event: Any) -> str | None:
+    """Translate one Tk key event into a validated, portable shortcut string."""
+
+    keysym = str(getattr(event, "keysym", "")).strip().lower()
+    if not keysym or keysym in _TK_MODIFIER_KEYSYMS:
+        return None
+    character = str(getattr(event, "char", ""))
+    if character == "+":
+        key = "plus"
+    elif len(character) == 1 and character.isprintable() and not character.isspace():
+        key = character
+    elif keysym in _TK_KEYSYM_TOKENS:
+        key = _TK_KEYSYM_TOKENS[keysym]
+    elif len(keysym) == 1 and keysym.isascii() and keysym.isalnum():
+        key = keysym
+    elif keysym.startswith("f") and keysym[1:].isdigit():
+        key = keysym
+    else:
+        raise ValueError(f"key {keysym!r} cannot be used as a global shortcut")
+    state = int(getattr(event, "state", 0))
+    modifiers = []
+    if state & 0x0004:
+        modifiers.append("ctrl")
+    if state & 0x0008:
+        modifiers.append("alt")
+    if state & 0x0001:
+        modifiers.append("shift")
+    if state & 0x0040:
+        modifiers.append("win")
+    return normalize_control_hotkey("+".join((*modifiers, key)))
 
 
 class DiagnosticReader(Protocol):
@@ -219,6 +322,8 @@ class TkCompanionSurfaces:
         voices: VoiceSettingsService | VoiceSettingsReader,
         diagnostics: DiagnosticStore | DiagnosticReader,
         *,
+        get_control_binding: Callable[[], str],
+        set_control_binding: Callable[[str], object],
         get_auto_submit: Callable[[], bool],
         set_auto_submit: Callable[[bool], object],
         get_recording_mode: Callable[[], str],
@@ -243,6 +348,8 @@ class TkCompanionSurfaces:
         self._parent = parent
         self._voices = voices
         self._diagnostics = diagnostics
+        self._get_control_binding = get_control_binding
+        self._set_control_binding = set_control_binding
         self._get_auto_submit = get_auto_submit
         self._set_auto_submit = set_auto_submit
         self._get_recording_mode = get_recording_mode
@@ -282,7 +389,7 @@ class TkCompanionSurfaces:
         return stopped
 
     def open_settings(self) -> TkSurfaceWindow:
-        surface = self._new_surface("TalkToMeJohnny settings", "560x400")
+        surface = self._new_surface("TalkToMeJohnny settings", "640x460")
         window = surface.window
         frame = self._tk.Frame(window, padx=12, pady=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -294,6 +401,8 @@ class TkCompanionSurfaces:
             if current_mode in {"push-toggle", "push-to-talk"}
             else "push-toggle"
         )
+        control_binding = self._tk.StringVar(value=str(self._get_control_binding()))
+        surface.variables["control_binding"] = control_binding
         current_provider = self._get_assistant_provider()
         assistant_provider = self._tk.StringVar(
             value=(
@@ -326,22 +435,90 @@ class TkCompanionSurfaces:
         self._tk.Label(frame, text="Recording control", anchor="w").grid(
             row=2, column=0, columnspan=2, sticky="w"
         )
+        self._tk.Label(frame, text="Recording hotkey", anchor="w").grid(
+            row=3, column=0, sticky="w"
+        )
+        control_binding_entry = self._tk.Entry(
+            frame,
+            textvariable=control_binding,
+            width=24,
+            state="readonly",
+        )
+        control_binding_entry.grid(row=3, column=1, sticky="ew", padx=(8, 8))
+        capture_state: dict[str, object] = {
+            "active": False,
+            "binding_id": None,
+        }
+
+        def finish_capture() -> None:
+            binding_id = capture_state["binding_id"]
+            if isinstance(binding_id, str):
+                window.unbind("<KeyPress>", binding_id)
+            capture_state["active"] = False
+            capture_state["binding_id"] = None
+            change_binding.configure(text="Change shortcut")
+
+        def capture_key(event: Any) -> str:
+            try:
+                captured = _control_binding_from_tk_event(event)
+            except ValueError as exc:
+                self._show_error("Shortcut was not changed", exc, parent=window)
+                return "break"
+            if captured is None:
+                return "break"
+            control_binding.set(captured)
+            finish_capture()
+            return "break"
+
+        def toggle_capture() -> None:
+            if bool(capture_state["active"]):
+                finish_capture()
+                return
+            capture_state["active"] = True
+            change_binding.configure(text="Press shortcut...")
+            capture_state["binding_id"] = window.bind(
+                "<KeyPress>",
+                capture_key,
+                add="+",
+            )
+            window.focus_force()
+
+        change_binding = self._tk.Button(
+            frame,
+            text="Change shortcut",
+            command=toggle_capture,
+        )
+        change_binding.grid(row=3, column=2, sticky="w")
+        control_binding_warning = self._tk.Label(
+            frame,
+            text=CONTROL_KEYBINDING_WARNING,
+            justify="left",
+            anchor="w",
+            wraplength=600,
+        )
+        control_binding_warning.grid(
+            row=4,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(4, 8),
+        )
         toggle = self._tk.Radiobutton(
             frame,
             text="Push-toggle (press once to start, once to finish)",
             variable=recording_mode,
             value="push-toggle",
         )
-        toggle.grid(row=3, column=0, columnspan=2, sticky="w")
+        toggle.grid(row=5, column=0, columnspan=3, sticky="w")
         hold = self._tk.Radiobutton(
             frame,
             text="Hold to talk (push-to-talk)",
             variable=recording_mode,
             value="push-to-talk",
         )
-        hold.grid(row=4, column=0, columnspan=2, sticky="w")
+        hold.grid(row=6, column=0, columnspan=3, sticky="w")
         self._tk.Label(frame, text="Assistant provider", anchor="w").grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(12, 0)
+            row=7, column=0, columnspan=3, sticky="w", pady=(12, 0)
         )
         both = self._tk.Radiobutton(
             frame,
@@ -349,21 +526,21 @@ class TkCompanionSurfaces:
             variable=assistant_provider,
             value="both",
         )
-        both.grid(row=6, column=0, columnspan=2, sticky="w")
+        both.grid(row=8, column=0, columnspan=3, sticky="w")
         claude = self._tk.Radiobutton(
             frame,
             text="Claude Code only",
             variable=assistant_provider,
             value="claude",
         )
-        claude.grid(row=7, column=0, columnspan=2, sticky="w")
+        claude.grid(row=9, column=0, columnspan=3, sticky="w")
         codex = self._tk.Radiobutton(
             frame,
             text="Codex CLI only",
             variable=assistant_provider,
             value="codex",
         )
-        codex.grid(row=8, column=0, columnspan=2, sticky="w")
+        codex.grid(row=10, column=0, columnspan=3, sticky="w")
         restart = self._tk.Label(
             frame,
             text=(
@@ -374,10 +551,18 @@ class TkCompanionSurfaces:
             anchor="w",
             wraplength=520,
         )
-        restart.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        restart.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+
+        def close() -> None:
+            finish_capture()
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", close)
 
         def save() -> None:
+            finish_capture()
             try:
+                self._set_control_binding(str(control_binding.get()))
                 self._set_recording_mode(str(recording_mode.get()))
                 self._set_auto_submit(bool(auto_submit.get()))
                 self._set_assistant_provider(str(assistant_provider.get()))
@@ -387,13 +572,16 @@ class TkCompanionSurfaces:
             window.destroy()
 
         save_button = self._tk.Button(frame, text="Save", command=save)
-        save_button.grid(row=9, column=0, sticky="e", pady=(16, 0))
-        cancel = self._tk.Button(frame, text="Cancel", command=window.destroy)
-        cancel.grid(row=9, column=1, sticky="w", pady=(16, 0))
+        save_button.grid(row=12, column=0, sticky="e", pady=(16, 0))
+        cancel = self._tk.Button(frame, text="Cancel", command=close)
+        cancel.grid(row=12, column=1, sticky="w", pady=(16, 0))
         surface.controls.update(
             {
                 "auto_submit": auto_toggle,
                 "warning": warning,
+                "control_binding": control_binding_entry,
+                "change_control_binding": change_binding,
+                "control_binding_warning": control_binding_warning,
                 "push_toggle": toggle,
                 "push_to_talk": hold,
                 "claude_provider": claude,

@@ -41,7 +41,11 @@ from talktomeclaude.companion.contracts import (
     CompanionSnapshot,
     IntentKind,
 )
-from talktomeclaude.companion.hotkey import ThreadHotkeyListener
+from talktomeclaude.companion.hotkey import (
+    ReconfigurableHotkeyListener,
+    normalize_control_hotkey,
+    parse_control_hotkey,
+)
 from talktomeclaude.companion.inbox import (
     DurableReplyInbox,
     InboxStatus,
@@ -666,6 +670,44 @@ def _route_hotkey_release(controller: CompanionController) -> None:
         controller.dispatch(CompanionIntent(IntentKind.FINISH_RECORDING))
 
 
+def _control_hotkey() -> tuple[int, int]:
+    """Return normalized capture hotkey args, or safe defaults on bad config."""
+    try:
+        return parse_control_hotkey(config.control_hotkey())
+    except ValueError:
+        return parse_control_hotkey(config.DEFAULT_CONTROL_KEYBINDING)
+
+
+def _apply_control_keybinding(
+    binding: str,
+    hotkey: ReconfigurableHotkeyListener,
+    *,
+    current_binding: Callable[[], str],
+    persist: Callable[[str], object],
+) -> str:
+    """Validate, live-rebind, persist, and roll back on a storage failure."""
+
+    normalized = normalize_control_hotkey(binding)
+    previous = normalize_control_hotkey(current_binding())
+    if normalized == previous:
+        persist(normalized)
+        return normalized
+    replacement = parse_control_hotkey(normalized)
+    rollback = parse_control_hotkey(previous)
+    hotkey.rebind(*replacement)
+    try:
+        persist(normalized)
+    except Exception:
+        try:
+            hotkey.rebind(*rollback)
+        except Exception as rollback_error:
+            raise RuntimeError(
+                "control hotkey changed but its settings rollback failed"
+            ) from rollback_error
+        raise
+    return normalized
+
+
 def _selected_voice() -> str:
     configured = config.default_voice_name()
     try:
@@ -802,6 +844,7 @@ def build_desktop_application() -> DesktopCompanionApplication:
     )
     surface_holder: dict[str, TkCompanionSurfaces] = {}
     review_holder: dict[str, Callable[[], None]] = {}
+    hotkey_holder: dict[str, ReconfigurableHotkeyListener] = {}
 
     def open_settings() -> None:
         surface_holder["surfaces"].open_settings()
@@ -857,10 +900,20 @@ def build_desktop_application() -> DesktopCompanionApplication:
     def set_assistant_provider(value: str) -> None:
         config.set_assistant_provider(value)
 
+    def set_control_keybinding(value: str) -> None:
+        _apply_control_keybinding(
+            value,
+            hotkey_holder["listener"],
+            current_binding=config.control_hotkey,
+            persist=config.set_control_keybinding,
+        )
+
     surface_holder["surfaces"] = TkCompanionSurfaces(
         shell.root,
         VoiceSettingsService(),
         diagnostics,
+        get_control_binding=config.control_hotkey,
+        set_control_binding=set_control_keybinding,
         get_auto_submit=config.assistant_auto_submit_enabled,
         set_auto_submit=set_auto_submit,
         get_recording_mode=config.companion_recording_mode,
@@ -883,10 +936,14 @@ def build_desktop_application() -> DesktopCompanionApplication:
 
     review_holder["open"] = open_review
 
-    hotkey = ThreadHotkeyListener(
+    modifiers, virtual_key = _control_hotkey()
+    hotkey = ReconfigurableHotkeyListener(
         lambda: _route_hotkey_press(controller),
         release_callback=lambda: _route_hotkey_release(controller),
+        modifiers=modifiers,
+        virtual_key=virtual_key,
     )
+    hotkey_holder["listener"] = hotkey
     return DesktopCompanionApplication(
         controller,
         shell,

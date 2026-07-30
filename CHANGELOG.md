@@ -4,6 +4,10 @@ All notable changes to TalkToMeJohnny will be recorded here.
 
 ## Unreleased
 
+- Added a Settings shortcut recorder for the companion's global recording
+  control, including single printable keys such as `~` and `?`, with live
+  rebinding, conflict-safe rollback, and matching `config get/set` commands.
+
 ## 0.1.4 - 2026-07-29
 
 - Preferred stable `PATH` launchers before interpreter-sibling fallbacks so
