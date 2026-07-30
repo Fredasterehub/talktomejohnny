@@ -389,7 +389,7 @@ class TkCompanionSurfaces:
         return stopped
 
     def open_settings(self) -> TkSurfaceWindow:
-        surface = self._new_surface("TalkToMeJohnny settings", "640x460")
+        surface = self._new_surface("TalkToMeJohnny settings", "680x500")
         window = surface.window
         frame = self._tk.Frame(window, padx=12, pady=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -441,10 +441,10 @@ class TkCompanionSurfaces:
         control_binding_entry = self._tk.Entry(
             frame,
             textvariable=control_binding,
-            width=24,
+            width=30,
             state="readonly",
         )
-        control_binding_entry.grid(row=3, column=1, sticky="ew", padx=(8, 8))
+        control_binding_entry.grid(row=3, column=1, sticky="ew", padx=(12, 12))
         capture_state: dict[str, object] = {
             "active": False,
             "binding_id": None,
@@ -494,14 +494,14 @@ class TkCompanionSurfaces:
             text=CONTROL_KEYBINDING_WARNING,
             justify="left",
             anchor="w",
-            wraplength=600,
+            wraplength=640,
         )
         control_binding_warning.grid(
             row=4,
             column=0,
             columnspan=3,
             sticky="ew",
-            pady=(4, 8),
+            pady=(7, 16),
         )
         toggle = self._tk.Radiobutton(
             frame,
@@ -518,7 +518,7 @@ class TkCompanionSurfaces:
         )
         hold.grid(row=6, column=0, columnspan=3, sticky="w")
         self._tk.Label(frame, text="Assistant provider", anchor="w").grid(
-            row=7, column=0, columnspan=3, sticky="w", pady=(12, 0)
+            row=7, column=0, columnspan=3, sticky="w", pady=(16, 0)
         )
         both = self._tk.Radiobutton(
             frame,
@@ -549,9 +549,9 @@ class TkCompanionSurfaces:
             ),
             justify="left",
             anchor="w",
-            wraplength=520,
+            wraplength=640,
         )
-        restart.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        restart.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
         def close() -> None:
             finish_capture()
@@ -572,9 +572,9 @@ class TkCompanionSurfaces:
             window.destroy()
 
         save_button = self._tk.Button(frame, text="Save", command=save)
-        save_button.grid(row=12, column=0, sticky="e", pady=(16, 0))
+        save_button.grid(row=12, column=0, sticky="e", pady=(20, 0))
         cancel = self._tk.Button(frame, text="Cancel", command=close)
-        cancel.grid(row=12, column=1, sticky="w", pady=(16, 0))
+        cancel.grid(row=12, column=1, sticky="w", pady=(20, 0))
         surface.controls.update(
             {
                 "auto_submit": auto_toggle,
