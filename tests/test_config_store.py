@@ -226,10 +226,10 @@ class AtomicStorageTests(unittest.TestCase):
                 side_effect=replace_denied,
             ),
             mock.patch(
-                "talktomeclaude.storage.atomic.time.monotonic",
+                "talktomeclaude.storage.atomic._WINDOWS_REPLACE_MONOTONIC",
                 side_effect=(0.0, 1.0),
             ),
-            mock.patch("talktomeclaude.storage.atomic.time.sleep"),
+            mock.patch("talktomeclaude.storage.atomic._WINDOWS_REPLACE_SLEEP"),
             mock.patch.object(
                 type(self.path),
                 "unlink",

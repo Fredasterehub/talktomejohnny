@@ -22,6 +22,8 @@ from typing import Any
 
 _IS_WINDOWS = sys.platform == "win32"
 _WINDOWS_REPLACE_RETRY_ENABLED = _IS_WINDOWS
+_WINDOWS_REPLACE_MONOTONIC = time.monotonic
+_WINDOWS_REPLACE_SLEEP = time.sleep
 _NATIVE_PATH = type(Path())
 _WINDOWS_REPLACE_RETRY_SECONDS = 0.5
 
@@ -317,7 +319,7 @@ class AtomicJsonTransaction:
             except PermissionError:
                 if not _WINDOWS_REPLACE_RETRY_ENABLED:
                     raise
-                now = time.monotonic()
+                now = _WINDOWS_REPLACE_MONOTONIC()
                 if deadline is None:
                     deadline = now + min(
                         max(0.0, self.timeout),
@@ -326,5 +328,5 @@ class AtomicJsonTransaction:
                 remaining = deadline - now
                 if remaining <= 0:
                     raise
-                time.sleep(min(delay, remaining))
+                _WINDOWS_REPLACE_SLEEP(min(delay, remaining))
                 delay = min(delay * 2, 0.05)
