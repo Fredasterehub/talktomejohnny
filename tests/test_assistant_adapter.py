@@ -343,7 +343,7 @@ class ClaudeHookManagerTests(unittest.TestCase):
                 ):
                     self.assertEqual(
                         hook_module.resolve_hook_executable({"PATH": ""}),
-                        str(executable),
+                        str(executable.resolve()),
                     )
         with tempfile.TemporaryDirectory() as temporary:
             scripts = Path(temporary)
